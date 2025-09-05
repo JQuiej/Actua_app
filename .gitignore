@@ -9,8 +9,6 @@
 *.env
 
 # ## Archivos de Build ##
-# Ignorar la carpeta 'build' que genera la aplicación de React para producción.
-/client/build
 
 # ## Archivos de Log ##
 # Ignorar logs de errores y de depuración.
