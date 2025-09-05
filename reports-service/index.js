@@ -32,24 +32,27 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
-mongoose.connect(process.env.MONGO_URI);
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log("Conexión a MongoDB exitosa"))
+    .catch(err => console.error("Error de conexión a MongoDB:", err));
 
-// --- FUNCIÓN DE GEOLOCALIZACIÓN CORREGIDA ---
+// --- FUNCIÓN DE GEOLOCALIZACIÓN MEJORADA ---
 const getMunicipality = async (lat, lng) => {
     try {
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&countrycodes=gt&accept-language=es`;
         
-        // La política de Nominatim requiere un User-Agent único.
-        // Reemplaza el email de ejemplo con tu propio email.
+        // ¡ACCIÓN IMPORTANTE! La política de Nominatim requiere un User-Agent único.
+        // Reemplaza el email de ejemplo con tu propio email real.
         const response = await axios.get(url, {
-            headers: { 'User-Agent': 'AppReportesCiudadanos/1.0 (tuemail@ejemplo.com)' }
+            headers: { 'User-Agent': 'ActuaApp/1.0 (tu.email.real@ejemplo.com)' } 
         });
         
         const address = response.data.address;
         return address.city || address.town || address.state_district || address.county || address.state || 'No identificado';
     } catch (error) {
+        // Si esta función falla, no queremos que crashee el servidor.
         console.error("Error en Reverse Geocoding:", error.message);
-        return 'No identificado';
+        return 'No identificado'; // Devolvemos un valor por defecto.
     }
 };
 
@@ -90,8 +93,9 @@ app.post('/reports', upload.single('image'), async (req, res) => {
         res.status(201).json(savedReport);
 
     } catch (err) {
-        console.error("Error al crear reporte:", err);
-        res.status(500).json({ message: 'Error interno del servidor.' });
+        // Este log es crucial para ver el error exacto en Render
+        console.error("Error detallado al crear reporte:", err);
+        res.status(500).json({ message: 'Error interno del servidor al crear el reporte.' });
     }
 });
 
