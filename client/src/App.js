@@ -44,7 +44,9 @@ function ChangeView({ center, zoom }) {
     return null;
 }
 
-const API_URL = 'http://localhost:5000';
+// --- ¡CAMBIO IMPORTANTE AQUÍ! ---
+// Usará la variable de entorno en producción, o localhost para desarrollo local.
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 const CATEGORIES = ['Emergencia', 'Ayuda', 'Calle en mal estado', 'Servicio público', 'Otro'];
 
 function App() {
