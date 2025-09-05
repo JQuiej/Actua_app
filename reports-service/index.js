@@ -34,18 +34,18 @@ const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } 
 
 mongoose.connect(process.env.MONGO_URI);
 
-// --- FUNCIÓN DE GEOLOCALIZACIÓN MEJORADA ---
+// --- FUNCIÓN DE GEOLOCALIZACIÓN CORREGIDA ---
 const getMunicipality = async (lat, lng) => {
     try {
-        // Añadimos 'countrycodes=gt' para limitar la búsqueda a Guatemala y 'accept-language=es' para preferir español
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&countrycodes=gt&accept-language=es`;
         
+        // La política de Nominatim requiere un User-Agent único.
+        // Reemplaza el email de ejemplo con tu propio email.
         const response = await axios.get(url, {
             headers: { 'User-Agent': 'AppReportesCiudadanos/1.0 (tuemail@ejemplo.com)' }
         });
         
         const address = response.data.address;
-        // Cadena de búsqueda más robusta para la estructura de Guatemala
         return address.city || address.town || address.state_district || address.county || address.state || 'No identificado';
     } catch (error) {
         console.error("Error en Reverse Geocoding:", error.message);
@@ -63,7 +63,7 @@ app.get('/reports', async (req, res) => {
     }
 });
 
-// Endpoint para CREAR un reporte (lógica sin cambios)
+// Endpoint para CREAR un reporte
 app.post('/reports', upload.single('image'), async (req, res) => {
     try {
         const { description, category, coordinates } = req.body;

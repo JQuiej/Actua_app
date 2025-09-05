@@ -44,8 +44,6 @@ function ChangeView({ center, zoom }) {
     return null;
 }
 
-// --- ¡CAMBIO IMPORTANTE AQUÍ! ---
-// Usará la variable de entorno en producción, o localhost para desarrollo local.
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 const CATEGORIES = ['Emergencia', 'Ayuda', 'Calle en mal estado', 'Servicio público', 'Otro'];
 
@@ -78,9 +76,8 @@ function App() {
         setCenter(currentLocation);
         
         try {
-            const response = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&countrycodes=gt&accept-language=es`, {
-                headers: { 'User-Agent': 'AppReportes/1.0' }
-            });
+            // --- CORRECCIÓN AQUÍ: Se eliminó la cabecera 'User-Agent' que causaba un error en el navegador ---
+            const response = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&countrycodes=gt&accept-language=es`);
             const address = response.data.address;
             const municipality = address.city || address.town || address.state_district || address.county || address.state;
             setUserMunicipality(municipality);
