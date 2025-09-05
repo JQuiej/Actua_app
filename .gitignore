@@ -1,0 +1,30 @@
+# ## Dependencias ##
+# Ignorar las carpetas de módulos de Node en cualquier subdirectorio.
+# Son pesadas y se pueden reinstalar con `npm install`.
+**/node_modules
+
+# ## Variables de Entorno ##
+# NUNCA subir archivos .env a GitHub. Contienen contraseñas y claves secretas.
+# Se recomienda crear un archivo .env.example con las variables pero sin sus valores.
+*.env
+
+# ## Archivos de Build ##
+# Ignorar la carpeta 'build' que genera la aplicación de React para producción.
+/client/build
+
+# ## Archivos de Log ##
+# Ignorar logs de errores y de depuración.
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# ## Archivos del Sistema Operativo ##
+# Ignorar archivos generados automáticamente por macOS y Windows.
+.DS_Store
+Thumbs.db
+
+# ## Carpetas de Editores de Código ##
+# Ignorar configuraciones específicas del editor de cada desarrollador.
+.vscode/
+.idea/
