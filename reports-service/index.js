@@ -36,7 +36,7 @@ mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("Conexión a MongoDB exitosa"))
     .catch(err => console.error("Error de conexión a MongoDB:", err));
 
-// --- FUNCIÓN DE GEOLOCALIZACIÓN MEJORADA ---
+// --- FUNCIÓN DE GEOLOCALIZACIÓN CORREGIDA ---
 const getMunicipality = async (lat, lng) => {
     try {
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&countrycodes=gt&accept-language=es`;

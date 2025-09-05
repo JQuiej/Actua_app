@@ -76,7 +76,7 @@ function App() {
         setCenter(currentLocation);
         
         try {
-            // --- CORRECCIÓN AQUÍ: Se eliminó la cabecera 'User-Agent' que causaba un error en el navegador ---
+            // Se eliminó la cabecera 'User-Agent' que causaba un error en el navegador
             const response = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&countrycodes=gt&accept-language=es`);
             const address = response.data.address;
             const municipality = address.city || address.town || address.state_district || address.county || address.state;
@@ -105,7 +105,7 @@ function App() {
     return () => socket.disconnect();
   }, []);
   
-  // 3. Lógica para filtrar eventos para el panel lateral
+  // 3. Lógica para filtrar eventos
   const showNearbyEvents = () => {
       if(!userLocation) return;
       setPanelTitle('Eventos Cercanos (a 5km)');
@@ -126,42 +126,32 @@ function App() {
       setIsPanelOpen(true);
   };
 
-  // 4. Lógica para enviar el formulario con la imagen
+  // 4. Lógica para enviar el formulario
   const handleSubmitReport = async () => {
     if (!userLocation || !newReportDesc) {
-        alert("Se requiere ubicación y descripción.");
-        return;
+        alert("Se requiere ubicación y descripción."); return;
     }
     setIsSubmitting(true);
     const formData = new FormData();
     formData.append('description', newReportDesc);
     formData.append('category', newReportCategory);
     formData.append('coordinates', JSON.stringify(userLocation));
-    if (newReportImage) {
-        formData.append('image', newReportImage);
-    }
+    if (newReportImage) formData.append('image', newReportImage);
 
     try {
-        await axios.post(`${API_URL}/reports`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-        });
+        await axios.post(`${API_URL}/reports`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
         setShowAddModal(false);
-        setNewReportDesc(''); 
-        setNewReportCategory('Otro'); 
-        setNewReportImage(null);
+        setNewReportDesc(''); setNewReportCategory('Otro'); setNewReportImage(null);
     } catch(err) {
         console.error("Error al crear reporte:", err);
+        alert("Hubo un error al crear el reporte. Por favor, inténtalo de nuevo.");
     } finally {
         setIsSubmitting(false);
     }
   };
   
   // 5. Función para el botón de recentrar
-  const handleRecenter = () => {
-      if (userLocation) {
-          setCenter(userLocation);
-      }
-  };
+  const handleRecenter = () => { if (userLocation) setCenter(userLocation); };
 
   return (
     <>
@@ -195,7 +185,7 @@ function App() {
         .modal-content { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; z-index: 1002; }
         .modal-content textarea, .modal-content select, .modal-content input, .modal-content button { width: 100%; padding: 12px; margin-top: 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 16px; box-sizing: border-box; }
       `}</style>
-
+      
       <div className="map-container-wrapper">
         <div className={`side-panel ${isPanelOpen ? '' : 'closed'}`}>
             <h3>{panelTitle}</h3>
@@ -238,7 +228,7 @@ function App() {
             <div className="floating-buttons">
                 {userLocation && (
                     <button className="floating-button recenter-button" title="Centrar en mi ubicación" onClick={handleRecenter}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V2"/><path d="M12 22v-6"/><path d="M22 12h-6"/><path d="M8 12H2"/><path d="m18 6-4-4-4 4"/><path d="m6 18 4 4 4-4"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V2"/><path d="M12 22v-6"/><path d="M22 12h-6"/><path d="M8 12H2"/><path d="m18 6-4-4-4 4"/><path d="m6 18 4 4 4-4"/></svg>
                     </button>
                 )}
                 <button className="floating-button add-report-button" title="Agregar un nuevo reporte" onClick={() => setShowAddModal(true)}>+</button>
