@@ -14,15 +14,6 @@ const categoryColors = {
     'Otro': '#777777'
 };
 
-// Arreglo para que los íconos por defecto de Leaflet funcionen correctamente con Webpack
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
-    iconUrl: require('leaflet/dist/images/marker-icon.png'),
-    shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
-});
-
-
 const getColoredIcon = (color) => {
     const markerHtmlStyles = `
         background-color: ${color};
@@ -44,7 +35,7 @@ const getColoredIcon = (color) => {
     });
 };
 
-const userLocationIcon = getColoredIcon('#4285F4'); // Azul para el usuario
+const userLocationIcon = getColoredIcon('#4285F4');
 
 // --- Componente auxiliar para centrar el mapa suavemente ---
 function ChangeView({ center, zoom }) {
@@ -103,14 +94,14 @@ function App() {
     axios.get(`${API_URL}/reports`)
       .then(res => {
         setReports(res.data);
-        setPanelContent(res.data); // Por defecto, el panel muestra todos los reportes
+        setPanelContent(res.data);
       })
       .catch(err => console.error("Error cargando reportes:", err));
 
     const socket = io(API_URL);
     socket.on('new_report', (newReport) => {
       setReports(prev => [newReport, ...prev]);
-      setPanelContent(prev => [newReport, ...prev]); // Asumimos que el nuevo reporte debe aparecer
+      setPanelContent(prev => [newReport, ...prev]);
     });
     return () => socket.disconnect();
   }, []);
@@ -228,7 +219,7 @@ function App() {
 
         <div className="map-wrapper">
             <button className="panel-toggle-button" onClick={() => setIsPanelOpen(!isPanelOpen)}>{isPanelOpen ? '<' : '>'}</button>
-                  <MapContainer center={center} zoom={15} maxZoom={30} style={{ height: "100%", width: "100%" }}>
+            <MapContainer center={center} zoom={15} maxZoom={20} style={{ height: "100%", width: "100%" }}>
                 <ChangeView center={center} zoom={15} />
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap' />
                 
@@ -298,4 +289,3 @@ function App() {
 }
 
 export default App;
-
