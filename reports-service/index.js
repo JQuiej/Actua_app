@@ -27,16 +27,21 @@ const Report = require('./models/Report');
 
 const app = express();
 
-// Configuración de CORS más específica para producción
-const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:3000'];
+// --- CONFIGURACIÓN DE CORS MEJORADA ---
+// Lista de orígenes permitidos. Se leerá desde las variables de entorno.
+const allowedOrigins = (process.env.FRONTEND_URL || '').split(',').concat('http://localhost:3000');
+
 const corsOptions = {
   origin: function (origin, callback) {
+    // Si el origen está en nuestra lista de permitidos (o si no hay origen, como en las peticiones de Postman), se permite.
     if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
       callback(null, true);
     } else {
+      // Si el origen no está permitido, se rechaza la petición.
       callback(new Error('Not allowed by CORS'));
     }
-  }
+  },
+  methods: ["GET", "POST"]
 };
 
 app.use(cors(corsOptions));
