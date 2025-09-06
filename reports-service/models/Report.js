@@ -9,18 +9,29 @@ const ReportSchema = new mongoose.Schema({
     category: {
         type: String,
         required: true,
-        enum: ['Emergencia', 'Ayuda', 'Calle en mal estado', 'Servicio público', 'Otro'],
+        enum: [ // <-- ESTA ES LA LISTA CORREGIDA Y COMPLETA
+            'Emergencia',
+            'Ayuda',
+            'Calle en mal estado',
+            'Servicio público',
+            'Donación de Sangre',
+            'Aviso Comunitario',
+            'Actividad Social/Cultural',
+            'Mascota Perdida/Encontrada',
+            'Accidente de Tráfico',
+            'Fallo Eléctrico',
+            'Fuga de Agua',
+            'Otro'
+        ],
         default: 'Otro'
     },
-    // --- CAMPO AÑADIDO: Para la URL de la imagen de Cloudinary ---
     imageUrl: { 
         type: String, 
-        required: false // Es opcional, no todos los reportes tendrán imagen
+        required: false
     },
-    // --- CAMPO AÑADIDO: Para el municipio obtenido con reverse geocoding ---
     municipality: { 
         type: String, 
-        required: false, // Es opcional para que la app no falle si no se puede obtener
+        required: false,
         trim: true 
     },
     location: {
