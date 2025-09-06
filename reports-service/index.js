@@ -26,11 +26,30 @@ const upload = multer({ storage: storage });
 const Report = require('./models/Report');
 
 const app = express();
-app.use(cors());
+
+// Configuración de CORS más específica para producción
+const allowedOrigins = [process.env.FRONTEND_URL, 'http://localhost:3000'];
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+const io = new Server(server, { 
+  cors: { 
+    origin: allowedOrigins, 
+    methods: ["GET", "POST"] 
+  } 
+});
+
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("Conexión a MongoDB exitosa"))
