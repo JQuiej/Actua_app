@@ -208,6 +208,8 @@ body, html {
   align-items: center;
 }
 
+/* --- INICIO DEL BLOQUE PARA REEMPLAZAR --- */
+
 .floating-button {
   width: 56px;
   height: 56px;
@@ -216,11 +218,14 @@ body, html {
   border-radius: 50%;
   cursor: pointer;
   box-shadow: var(--shadow);
-  /* --- INICIO DE CAMBIOS --- */
+
+  /* Propiedades para un centrado perfecto */
   display: flex;
   justify-content: center;
   align-items: center;
-  /* --- FIN DE CAMBIOS --- */
+  padding: 0; /* Elimina cualquier padding por defecto */
+  line-height: 1; /* Evita que la altura de línea afecte el centrado */
+
   transition: background-color 0.2s, transform 0.2s;
 }
 .floating-button:hover {
@@ -245,11 +250,14 @@ body, html {
 
 .add-report-button {
   background-color: var(--primary-color);
-  font-size: 32px;
+  /* Ajustamos el tamaño de fuente para que se vea bien centrado */
+  font-size: 36px; 
 }
 .add-report-button:hover {
     background-color: var(--primary-color-dark);
 }
+
+/* --- FIN DEL BLOQUE PARA REEMPLAZAR --- */
 
 /* ==========================================================================
    Modales
