@@ -72,13 +72,25 @@ app.use(express.json());
 
 const backendUrl = process.env.NODE_ENV === 'production' ? process.env.BACKEND_URL : 'http://localhost:5000';
 
+app.set('trust proxy', 1); 
+
 app.use(session({
     secret: process.env.SESSION_SECRET || 'secretkey',
     resave: false,
     saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI })
-}));
+    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
+    cookie: {
+        // secure: true asegura que la cookie solo se envíe a través de HTTPS.
+        secure: process.env.NODE_ENV === 'production', 
 
+        // httpOnly: true previene que el JavaScript del cliente acceda a la cookie.
+        httpOnly: true,
+
+        // sameSite: 'none' es NECESARIO para que las cookies funcionen entre diferentes dominios (frontend y backend).
+        // Requiere que 'secure' sea true.
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' 
+    }
+}));
 app.use(passport.initialize());
 app.use(passport.session());
 
