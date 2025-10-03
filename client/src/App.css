@@ -216,8 +216,11 @@ body, html {
   border-radius: 50%;
   cursor: pointer;
   box-shadow: var(--shadow);
-  display: grid;
-  place-items: center;
+  /* --- INICIO DE CAMBIOS --- */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  /* --- FIN DE CAMBIOS --- */
   transition: background-color 0.2s, transform 0.2s;
 }
 .floating-button:hover {
