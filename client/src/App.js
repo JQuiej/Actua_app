@@ -13,6 +13,9 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import L from 'leaflet';
 import Swal from 'sweetalert2';
 import imageCompression from 'browser-image-compression';
+import { GoogleLogin } from '@react-oauth/google';
+
+axios.defaults.withCredentials = true;
 
 const categoryColors = {
     'Emergencia': '#d9534f', 'Ayuda': '#5cb85c', 'Calle en mal estado': '#f0ad4e',
@@ -61,9 +64,13 @@ const RELEVANCE_ORDER = {
     'Emergencia': 1, 'Accidente de Tráfico': 2, 'Donación de Sangre': 3, 'Ayuda': 4
 };
 
+// --- Función para mostrar notificaciones ---
 const showNotification = (title, body) => {
     if (Notification.permission === 'granted') {
-        new Notification(title, { body: body, icon: '/logo192.png' });
+        new Notification(title, {
+            body: body,
+            icon: '/logo192.png' // Asegúrate de que este ícono exista en tu carpeta public
+        });
     }
 };
 
@@ -73,19 +80,24 @@ function App() {
   const [userMunicipality, setUserMunicipality] = useState('');
   const [center, setCenter] = useState([14.6407, -90.5132]);
   const [isLocating, setIsLocating] = useState(true);
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
   const [isPanelOpen, setIsPanelOpen] = useState(window.innerWidth > 768);
+  
   const [filterType, setFilterType] = useState('all');
   const [filterCategory, setFilterCategory] = useState('Todas');
+
   const [newReportDesc, setNewReportDesc] = useState('');
   const [newReportCategory, setNewReportCategory] = useState('Otro');
   const [newReportImage, setNewReportImage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  // --- Pedir permiso para notificaciones al cargar la app ---
   useEffect(() => {
     if ("Notification" in window && Notification.permission !== "denied") {
         Notification.requestPermission();
@@ -93,12 +105,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    axios.get(`${API_URL}/auth/me`, { withCredentials: true }).then(res => {
+    axios.get(`${API_URL}/auth/me`).then(res => {
         if (res.data) {
             setUser(res.data);
             if (res.data.role === 'admin') { setIsAdmin(true); }
         }
-    }).catch(() => setUser(null));
+    }).catch(err => {
+        console.error("No se pudo obtener el usuario:", err);
+    });
   }, []);
 
   useEffect(() => {
@@ -117,7 +131,7 @@ function App() {
         try {
             const response = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&countrycodes=gt&accept-language=es`);
             const address = response.data.address;
-            setUserMunicipality(address.city || address.town || address.state_district || address.county || address.state || '');
+            setUserMunicipality(address.city || address.town || address.state_district || address.county || address.state);
         } catch (e) { console.error("Error obteniendo municipio", e); }
       },
       () => { 
@@ -128,48 +142,62 @@ function App() {
   }, []);
 
   useEffect(() => {
-    axios.get(`${API_URL}/reports`, { withCredentials: true })
+    axios.get(`${API_URL}/reports`)
       .then(res => setReports(res.data))
       .catch(err => console.error("Error cargando reportes:", err));
 
-    const socket = io(API_URL, { withCredentials: true });
+    const socket = io(API_URL);
+
     socket.on('new_report', (newReport) => {
         setReports(prev => [newReport, ...prev]);
+
+        // Lógica de Notificación
         if (userLocation && newReport.location && newReport.location.coordinates) {
             const reportLatLng = L.latLng(newReport.location.coordinates[1], newReport.location.coordinates[0]);
             const userLatLng = L.latLng(userLocation[0], userLocation[1]);
-            const distance = userLatLng.distanceTo(reportLatLng);
+            const distance = userLatLng.distanceTo(reportLatLng); // Distancia en metros
+
+            // Si el reporte está a 5km o menos, notificar
             if (distance <= 5000) {
                 showNotification(`Nuevo reporte: ${newReport.category}`, newReport.description);
             }
         }
     });
+
     socket.on('delete_report', (deletedReportId) => {
         setReports(prev => prev.filter(report => report._id !== deletedReportId));
     });
+    
     return () => socket.disconnect();
-  }, [userLocation]);
+  }, [userLocation]); // <-- Añadimos userLocation como dependencia
 
   const panelContent = useMemo(() => {
     let processedReports = [...reports];
+
+    // --- Etapa de Filtrado ---
     if (filterType === 'reported') {
-      processedReports = processedReports.filter(report => report.reportCount > 0);
+      processedReports = processedReports.filter(report => report.reportCount && report.reportCount > 0);
     } else if (filterType === 'nearby' && userLocation) {
-      processedReports = processedReports.filter(report => report.location?.coordinates && L.latLng(userLocation).distanceTo([report.location.coordinates[1], report.location.coordinates[0]]) < 5000);
+      processedReports = processedReports.filter(report => L.latLng(userLocation).distanceTo([report.location.coordinates[1], report.location.coordinates[0]]) < 5000);
     } else if (filterType === 'municipality' && userMunicipality) {
       processedReports = processedReports.filter(report => report.municipality === userMunicipality);
     }
+
     if (filterCategory !== 'Todas') {
       processedReports = processedReports.filter(report => report.category === filterCategory);
     }
+
+    // --- Etapa de Ordenamiento ---
     if (filterType === 'reported') {
+      // Ordena por el que más reportes tiene
       processedReports.sort((a, b) => b.reportCount - a.reportCount);
     } else {
+      // Ordenamiento por defecto (relevancia, distancia, fecha)
       processedReports.sort((a, b) => {
         const relevanceA = RELEVANCE_ORDER[a.category] || 99;
         const relevanceB = RELEVANCE_ORDER[b.category] || 99;
         if (relevanceA !== relevanceB) return relevanceA - relevanceB;
-        if (userLocation && a.location?.coordinates && b.location?.coordinates) {
+        if (userLocation) {
           const distA = L.latLng(userLocation).distanceTo([a.location.coordinates[1], a.location.coordinates[0]]);
           const distB = L.latLng(userLocation).distanceTo([b.location.coordinates[1], b.location.coordinates[0]]);
           return distA - distB;
@@ -177,31 +205,40 @@ function App() {
         return new Date(b.createdAt) - new Date(a.createdAt);
       });
     }
+
     return processedReports;
   }, [reports, filterType, filterCategory, userLocation, userMunicipality]);
 
   const handleSubmitReport = async () => {
-    if (!userLocation || !newReportDesc) { Swal.fire({ icon: 'warning', title: 'Faltan datos', text: 'Se requiere tu ubicación y una descripción.' }); return; }
+    if (!userLocation || !newReportDesc) {
+        Swal.fire({ icon: 'warning', title: 'Faltan datos', text: 'Se requiere tu ubicación y una descripción.' });
+        return;
+    }
     setIsSubmitting(true);
     const formData = new FormData();
     formData.append('description', newReportDesc);
     formData.append('category', newReportCategory);
     formData.append('coordinates', JSON.stringify(userLocation));
+
     if (newReportImage) {
       try {
         const compressedFile = await imageCompression(newReportImage, { maxSizeMB: 1, maxWidthOrHeight: 1920 });
         formData.append('image', compressedFile, compressedFile.name);
       } catch (error) {
+        console.error("Error al comprimir la imagen:", error);
         Swal.fire({ icon: 'error', title: 'Error de imagen', text: 'No se pudo procesar la imagen.' });
-        setIsSubmitting(false); return;
+        setIsSubmitting(false);
+        return;
       }
     }
+
     try {
-        await axios.post(`${API_URL}/reports`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, withCredentials: true });
+        await axios.post(`${API_URL}/reports`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
         setShowAddModal(false);
         setNewReportDesc(''); setNewReportCategory('Otro'); setNewReportImage(null);
         Swal.fire({ icon: 'success', title: '¡Reporte Enviado!', timer: 2000, showConfirmButton: false });
     } catch(err) {
+        console.error("Error al crear reporte:", err);
         Swal.fire({ icon: 'error', title: 'Error', text: 'Hubo un error al crear el reporte.' });
     } finally {
         setIsSubmitting(false);
@@ -212,7 +249,7 @@ function App() {
 
   const handleReportAbuse = async (reportId) => {
     try {
-        await axios.post(`${API_URL}/reports/${reportId}/report`, {}, { withCredentials: true });
+        await axios.post(`${API_URL}/reports/${reportId}/report`, {});
         Swal.fire('Reportado', 'Gracias por tu aporte.', 'success');
     } catch (error) {
         Swal.fire('Error', error.response?.data?.message || 'No se pudo enviar el reporte.', 'error');
@@ -221,7 +258,7 @@ function App() {
 
   const handleDeleteReport = async (reportId) => {
     try {
-        await axios.delete(`${API_URL}/reports/${reportId}`, { withCredentials: true });
+        await axios.delete(`${API_URL}/reports/${reportId}`);
         Swal.fire('Eliminado', 'El reporte ha sido eliminado.', 'success');
         setSelectedReport(null);
     } catch (error) {
@@ -229,24 +266,32 @@ function App() {
     }
   };
 
+  const googleLoginSuccess = () => {
+    window.location.href = `${API_URL}/auth/google`;
+  };
 
   return (
     <div className="map-container-wrapper">
         {isMobile && isPanelOpen && <div className="panel-overlay" onClick={() => setIsPanelOpen(false)}></div>}
+
         <div className={`side-panel ${isPanelOpen ? 'open' : 'closed'}`}>
             <button className="panel-internal-close-button" onClick={() => setIsPanelOpen(false)}>&times;</button>
             <h3>Eventos</h3>
+            
             {user ? (
                 <div className="user-info">
-                    {/* ...código de usuario logueado... */}
+                    <img src={user.image} alt="Perfil" />
+                    <div>
+                        <p className="display-name">{user.displayName}</p>
+                        <a href={`${API_URL}/auth/logout`} className="logout-link">Cerrar sesión</a>
+                    </div>
                 </div>
-            ) : ( 
-                <a href={`${API_URL}/auth/google`} className="google-login-button">
-                    Iniciar sesión con Google
-                </a>
-            )}
+            ) : ( <GoogleLogin onSuccess={googleLoginSuccess} onError={() => console.log('Login Failed')} /> )}
+
             <div className="panel-controls">
-                {isAdmin && (<button onClick={() => setFilterType('reported')}>Ver Reportados</button>)}
+                {isAdmin && (
+                    <button onClick={() => setFilterType('reported')}>Ver Reportados</button>
+                )}
                 <button onClick={() => setFilterType('all')}>Ver Todos</button>
                 <button onClick={() => setFilterType('nearby')} disabled={isLocating || !userLocation}>Ver cerca de mí</button>
                 <button onClick={() => setFilterType('municipality')} disabled={isLocating || !userMunicipality}>Ver en mi municipio</button>
@@ -255,6 +300,7 @@ function App() {
                     {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
             </div>
+            
             <div className="reports-list">
               {panelContent.map(report => (
                   <div key={report._id} className="report-item" onClick={() => setSelectedReport(report)}>
@@ -269,14 +315,30 @@ function App() {
               ))}
             </div>
         </div>
+
         <div className="map-wrapper">
             {!isPanelOpen && <button className="panel-toggle-button" data-is-panel-open={isPanelOpen} onClick={() => setIsPanelOpen(true)}>›</button>}
-            <MapContainer center={center} zoom={10} maxZoom={17} minZoom={5} style={{ height: "100%", width: "100%" }} zoomControl={false}>
+            <MapContainer 
+              center={center} 
+              zoom={10} 
+              maxZoom={17} 
+              minZoom={5} 
+              style={{ height: "100%", width: "100%" }}
+              zoomControl={false}
+            >
                 <ChangeView center={center} zoom={10} />
                 <MapResizer isPanelOpen={isPanelOpen} />
+                
                 <ZoomControl position="topright" />
-                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap' noWrap={true} />
+
+                <TileLayer 
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" 
+                  attribution='&copy; OpenStreetMap'
+                  noWrap={true} 
+                />
+                
                 {userLocation && <Marker position={userLocation} icon={userLocationIcon}><Popup>Ubicación actual</Popup></Marker>}
+                
                 <MarkerClusterGroup>
                     {reports.map(report => (
                         <Marker key={report._id} 
@@ -287,12 +349,16 @@ function App() {
                     ))}
                 </MarkerClusterGroup>
             </MapContainer>
+            
             <div className="floating-buttons">
                 {userLocation && <button className="floating-button recenter-button" title="Centrar" onClick={handleRecenter}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V2"/><path d="M12 22v-6"/><path d="M22 12h-6"/><path d="M8 12H2"/><path d="m18 6-4-4-4 4"/><path d="m6 18 4 4 4-4"/></svg>
                 </button>}
-                {user && (<button className="floating-button add-report-button" title={isLocating ? "Obteniendo ubicación..." : "Agregar reporte"} onClick={() => setShowAddModal(true)} disabled={isLocating}>+</button>)}
+                {user && (
+                    <button className="floating-button add-report-button" title={isLocating ? "Obteniendo ubicación..." : "Agregar reporte"} onClick={() => setShowAddModal(true)} disabled={isLocating}>+</button>
+                )}
             </div>
+
             {selectedReport && (
                 <>
                     <div className="detail-modal-backdrop" onClick={() => setSelectedReport(null)}></div>
@@ -311,32 +377,52 @@ function App() {
                             <small>Fecha: {new Date(selectedReport.createdAt).toLocaleString('es-GT')}</small>
                             <br/>
                             {isAdmin && selectedReport.reportCount > 0 && <p style={{ color: 'red', fontWeight: 'bold' }}>Este evento tiene {selectedReport.reportCount} {selectedReport.reportCount === 1 ? 'reporte' : 'reportes'}.</p>}
-                            {user && !isAdmin && (<button onClick={() => handleReportAbuse(selectedReport._id)}>Reportar Abuso</button>)}
-                            {isAdmin && (<button onClick={() => handleDeleteReport(selectedReport._id)} style={{backgroundColor: 'red', color: 'white'}}>Eliminar Reporte</button>)}
+                            
+                            {user && !isAdmin && (
+                                <button onClick={() => handleReportAbuse(selectedReport._id)}>Reportar Abuso</button>
+                            )}
+                            {isAdmin && (
+                                <button onClick={() => handleDeleteReport(selectedReport._id)} style={{backgroundColor: 'red', color: 'white'}}>Eliminar Reporte</button>
+                            )}
                         </div>
                     </div>
                 </>
             )}
+
             {showAddModal && (
                 <>
                     <div className="modal-backdrop" onClick={() => !isSubmitting && setShowAddModal(false)}></div>
                     <div className="modal-content">
                         <h3>Crear Nuevo Reporte</h3>
+
                         <label htmlFor="description" className="form-label">Descripción</label>
                         <textarea id="description" rows="3" placeholder="Describe el evento..." value={newReportDesc} onChange={e => setNewReportDesc(e.target.value)} />
+
                         <label htmlFor="category" className="form-label">Categoría</label>
                         <select id="category" value={newReportCategory} onChange={e => setNewReportCategory(e.target.value)}>
                             {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                         </select>
+                        
                         <label className="form-label">Subir imagen (opcional)</label>
                         <div className="file-input-wrapper">
                             <label htmlFor="image-upload" className="file-input-label">
                                 {newReportImage ? newReportImage.name : 'Seleccionar archivo'}
                             </label>
-                            <input type="file" id="image-upload" className="file-input" accept="image/*" onChange={(e) => setNewReportImage(e.target.files[0])} />
+                            <input 
+                                type="file" 
+                                id="image-upload" 
+                                className="file-input" 
+                                accept="image/*" 
+                                onChange={(e) => setNewReportImage(e.target.files[0])} 
+                            />
                         </div>
-                        <button onClick={handleSubmitReport} disabled={isSubmitting} className="btn btn-primary">{isSubmitting ? 'Enviando...' : 'Enviar Reporte'}</button>
-                        <button onClick={() => setShowAddModal(false)} disabled={isSubmitting} className="btn btn-secondary">Cancelar</button>
+
+                        <button onClick={handleSubmitReport} disabled={isSubmitting} className="btn btn-primary">
+                            {isSubmitting ? 'Enviando...' : 'Enviar Reporte'}
+                        </button>
+                        <button onClick={() => setShowAddModal(false)} disabled={isSubmitting} className="btn btn-secondary">
+                            Cancelar
+                        </button>
                     </div>
                 </>
             )}
