@@ -14,15 +14,6 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
 
-require('dotenv').config();
-
-// --- LOG DE DIAGNÓSTICO ---
-console.log("--- VARIABLES DE ENTORNO EN PRODUCCIÓN ---");
-console.log("NODE_ENV:", process.env.NODE_ENV);
-console.log("FRONTEND_URL:", process.env.FRONTEND_URL);
-console.log("BACKEND_URL:", process.env.BACKEND_URL);
-console.log("-----------------------------------------");
-
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
@@ -40,27 +31,16 @@ const User = require('./models/User');
 
 const app = express();
 
-// --- CONFIGURACIÓN DE CORS DEFINITIVA ---
-// Lista explícita de orígenes permitidos
+// --- CONFIGURACIÓN DE CORS FINAL Y DIRECTA ---
 const allowedOrigins = [
     'http://localhost:3000',
     process.env.FRONTEND_URL 
-];
+].filter(Boolean); // Filtra valores undefined si FRONTEND_URL no está definida
 
-console.log('Orígenes CORS permitidos:', allowedOrigins); // Log de depuración
+console.log('Orígenes CORS permitidos:', allowedOrigins);
 
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Log para ver qué origen está pidiendo acceso
-    console.log('Petición recibida del origen:', origin);
-
-    // Permitir si el origen está en la lista o si no hay origen (como Postman)
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('Origen no permitido por CORS'));
-    }
-  },
+  origin: allowedOrigins, // Pasa el array directamente
   credentials: true,
   methods: ["GET", "POST", "DELETE"]
 };
@@ -122,7 +102,6 @@ mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("Conexión a MongoDB exitosa"))
     .catch(err => console.error("Error de conexión a MongoDB:", err));
 
-// ... (El resto del archivo no necesita cambios)
 const getMunicipality = async (lat, lng) => {
     try {
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&countrycodes=gt&accept-language=es`;
