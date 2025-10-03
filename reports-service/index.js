@@ -94,9 +94,11 @@ passport.deserializeUser(async (id, done) => {
     }
 });
 
+//const server = http.createServer(app);
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: allowedOrigins, methods: ["GET", "POST", "DELETE"] } });
-
+const io = new Server(server, {
+  cors: corsOptions // Reutiliza la configuración CORS de Express
+});
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("Conexión a MongoDB exitosa"))
     .catch(err => console.error("Error de conexión a MongoDB:", err));
