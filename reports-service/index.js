@@ -31,17 +31,25 @@ const User = require('./models/User');
 
 const app = express();
 
-const isProduction = process.env.NODE_ENV === 'production';
-const frontendUrl = isProduction ? process.env.FRONTEND_URL : 'http://localhost:3000';
-const backendUrl = isProduction ? process.env.BACKEND_URL : 'http://localhost:5000';
-const allowedOrigins = frontendUrl.split(',');
+// --- CONFIGURACIÓN DE CORS DEFINITIVA ---
+// Lista explícita de orígenes permitidos
+const allowedOrigins = [
+    'http://localhost:3000',
+    process.env.FRONTEND_URL 
+];
+
+console.log('Orígenes CORS permitidos:', allowedOrigins); // Log de depuración
 
 const corsOptions = {
   origin: function (origin, callback) {
+    // Log para ver qué origen está pidiendo acceso
+    console.log('Petición recibida del origen:', origin);
+
+    // Permitir si el origen está en la lista o si no hay origen (como Postman)
     if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error('Origen no permitido por CORS'));
     }
   },
   credentials: true,
@@ -49,7 +57,11 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+// --- FIN DE LA CONFIGURACIÓN DE CORS ---
+
 app.use(express.json());
+
+const backendUrl = process.env.NODE_ENV === 'production' ? process.env.BACKEND_URL : 'http://localhost:5000';
 
 app.use(session({
     secret: process.env.SESSION_SECRET || 'secretkey',
@@ -95,12 +107,13 @@ passport.deserializeUser(async (id, done) => {
 });
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: allowedOrigins, methods: ["GET", "POST", "DELETE"] } });
+const io = new Server(server, { cors: corsOptions });
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("Conexión a MongoDB exitosa"))
     .catch(err => console.error("Error de conexión a MongoDB:", err));
 
+// ... (El resto del archivo no necesita cambios)
 const getMunicipality = async (lat, lng) => {
     try {
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&countrycodes=gt&accept-language=es`;
@@ -117,54 +130,20 @@ const ensureAuth = (req, res, next) => { if (req.isAuthenticated()) { return nex
 const ensureAdmin = (req, res, next) => { if (req.isAuthenticated() && req.user.role === 'admin') { return next(); } res.status(403).json({ message: 'Acceso denegado' }); };
 
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-app.get('/auth/google/callback', passport.authenticate('google', { failureRedirect: '/' }), (req, res) => res.redirect(frontendUrl));
-app.get('/auth/logout', (req, res, next) => { req.logout(err => { if (err) { return next(err); } res.redirect(frontendUrl); }); });
+app.get('/auth/google/callback', passport.authenticate('google', { failureRedirect: process.env.FRONTEND_URL || 'http://localhost:3000' }), (req, res) => res.redirect(process.env.FRONTEND_URL || 'http://localhost:3000'));
+app.get('/auth/logout', (req, res, next) => { req.logout(err => { if (err) { return next(err); } res.redirect(process.env.FRONTEND_URL || 'http://localhost:3000'); }); });
 app.get('/auth/me', (req, res) => { res.json(req.user || null); });
 
 app.get('/reports', async (req, res) => {
     try {
         const reports = await Report.aggregate([
-            {
-                $addFields: {
-                    reportCount: {
-                        $cond: {
-                           if: { $isArray: "$reportedBy" },
-                           then: { $size: "$reportedBy" },
-                           else: 0
-                        }
-                    }
-                }
-            },
-            {
-                $lookup: {
-                    from: 'users',
-                    localField: 'createdBy',
-                    foreignField: '_id',
-                    as: 'createdByInfo'
-                }
-            },
-            {
-                $unwind: {
-                    path: '$createdByInfo',
-                    preserveNullAndEmptyArrays: true
-                }
-            },
-            {
-                $addFields: {
-                    'createdBy.displayName': '$createdByInfo.displayName',
-                    'createdBy.image': '$createdByInfo.image'
-                }
-            },
-            {
-                $project: {
-                    createdByInfo: 0 // Elimina el campo intermedio
-                }
-            },
-            {
-                $sort: { createdAt: -1 }
-            }
+            { $addFields: { reportCount: { $cond: { if: { $isArray: "$reportedBy" }, then: { $size: "$reportedBy" }, else: 0 } } } },
+            { $lookup: { from: 'users', localField: 'createdBy', foreignField: '_id', as: 'createdByInfo' } },
+            { $unwind: { path: '$createdByInfo', preserveNullAndEmptyArrays: true } },
+            { $addFields: { 'createdBy.displayName': '$createdByInfo.displayName', 'createdBy.image': '$createdByInfo.image' } },
+            { $project: { createdByInfo: 0 } },
+            { $sort: { createdAt: -1 } }
         ]);
-
         res.json(reports);
     } catch (err) {
         console.error("Error al obtener reportes:", err);
@@ -178,14 +157,12 @@ app.post('/reports', ensureAuth, upload.single('image'), async (req, res) => {
         const parsedCoords = JSON.parse(coordinates);
         const [lat, lng] = [parsedCoords[0], parsedCoords[1]];
         const municipality = await getMunicipality(lat, lng);
-
         const newReport = new Report({
             description, category, municipality,
             location: { type: 'Point', coordinates: [lng, lat] },
             imageUrl: req.file ? req.file.path : null,
             createdBy: req.user.id
         });
-
         const savedReport = await newReport.save();
         io.emit('new_report', savedReport);
         res.status(201).json(savedReport);
