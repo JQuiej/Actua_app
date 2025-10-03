@@ -13,7 +13,6 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import L from 'leaflet';
 import Swal from 'sweetalert2';
 import imageCompression from 'browser-image-compression';
-import { GoogleLogin } from '@react-oauth/google';
 
 const categoryColors = {
     'Emergencia': '#d9534f', 'Ayuda': '#5cb85c', 'Calle en mal estado': '#f0ad4e',
@@ -230,7 +229,6 @@ function App() {
     }
   };
 
-  const googleLoginSuccess = () => { window.location.href = `${API_URL}/auth/google`; };
 
   return (
     <div className="map-container-wrapper">
@@ -240,13 +238,13 @@ function App() {
             <h3>Eventos</h3>
             {user ? (
                 <div className="user-info">
-                    <img src={user.image} alt="Perfil" />
-                    <div>
-                        <p className="display-name">{user.displayName}</p>
-                        <a href={`${API_URL}/auth/logout`} className="logout-link">Cerrar sesión</a>
-                    </div>
+                    {/* ...código de usuario logueado... */}
                 </div>
-            ) : ( <GoogleLogin onSuccess={googleLoginSuccess} onError={() => console.log('Login Failed')} /> )}
+            ) : ( 
+                <a href={`${API_URL}/auth/google`} className="google-login-button">
+                    Iniciar sesión con Google
+                </a>
+            )}
             <div className="panel-controls">
                 {isAdmin && (<button onClick={() => setFilterType('reported')}>Ver Reportados</button>)}
                 <button onClick={() => setFilterType('all')}>Ver Todos</button>
