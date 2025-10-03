@@ -1,20 +1,21 @@
 # Usar una imagen oficial de Node.js
 FROM node:18-alpine
 
-# Crear directorio de la app
+# Establecer el directorio de trabajo en la imagen
 WORKDIR /usr/src/app
 
-# Copiar package.json y package-lock.json
+# Copiar primero package.json y package-lock.json para aprovechar el caché de Docker
 COPY package*.json ./
 
-# Instalar dependencias
+# Instalar las dependencias del proyecto
 RUN npm install
 
-# Copiar el resto del código de la app
+# Copiar TODO el resto del código fuente de la aplicación al directorio de trabajo
+# Esto incluye index.js, la carpeta models/, etc.
 COPY . .
 
-# Exponer el puerto
+# Exponer el puerto en el que corre la app
 EXPOSE 5000
 
-# Comando para correr la app
+# El comando para iniciar la aplicación
 CMD [ "npm", "start" ]
