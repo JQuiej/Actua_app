@@ -14,6 +14,15 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
 
+require('dotenv').config();
+
+// --- LOG DE DIAGNÓSTICO ---
+console.log("--- VARIABLES DE ENTORNO EN PRODUCCIÓN ---");
+console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("FRONTEND_URL:", process.env.FRONTEND_URL);
+console.log("BACKEND_URL:", process.env.BACKEND_URL);
+console.log("-----------------------------------------");
+
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
