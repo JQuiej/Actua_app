@@ -1,6 +1,14 @@
 /* ==========================================================================
    Variables y Estilos Base
    ========================================================================== */
+
+  html, body, #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden; /* Muy importante para evitar barras de scroll */
+}
 :root {
   --primary-color: #2563eb;
   --primary-color-dark: #1d4ed8;
@@ -812,7 +820,7 @@ body, html {
     position: absolute;
     top: 0;
     left: 0;
-    width: 75vw; /* <-- ¡CAMBIADO! Ahora ocupa el 85% del ancho */
+    width: 65vw; /* <-- ¡CAMBIADO! Ahora ocupa el 85% del ancho */
     max-width: 380px;
     z-index: 1002;
   }
