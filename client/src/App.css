@@ -2,10 +2,13 @@
    Variables y Estilos Base
    ========================================================================== */
 
-body, html, #root {
+html, body, #root {
   margin: 0;
   padding: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
+  position: relative; /* ¡CRÍTICO! Establece el contexto de posicionamiento */
 }
 :root {
   --primary-color: #2563eb;
@@ -44,12 +47,12 @@ body, html {
 }
 
 .map-container-wrapper {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  /* Ya no necesitas 'height' ni 'width', los valores de arriba lo fuerzan a estirarse */
+  position: absolute; /* Lo sacamos del flujo normal */
+  top: 0;             /* Ancla al borde superior */
+  left: 0;            /* Ancla al borde izquierdo */
+  right: 0;           /* Ancla al borde derecho */
+  bottom: 0;          /* Ancla al borde inferior */
+  /* Ya no necesitas 'width' ni 'height', las 4 propiedades de arriba lo fuerzan a estirarse */
   display: flex;
 }
 
@@ -308,7 +311,7 @@ body, html {
    Mapa y Contenedor - CORREGIDO
    ========================================================================== */
 .map-wrapper {
-  flex: 1;
+  flex: 1; /* Esto sigue siendo necesario para que el mapa llene el contenedor flex */
   height: 100%;
   width: 100%;
 }
