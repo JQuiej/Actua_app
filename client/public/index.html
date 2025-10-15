@@ -22,6 +22,22 @@
 <body>
   <noscript>You need to enable JavaScript to run this app.</noscript>
   <div id="root"></div>
+  <script>
+  function setRealViewportHeight() {
+    // 1. Medimos la altura interior REAL de la ventana
+    let vh = window.innerHeight * 0.01;
+    // 2. Establecemos el valor en nuestra variable CSS '--vh'
+    document.documentElement.style.setProperty('--vh', `${vh}px`);
+  }
+
+  // Ejecutamos la función al cargar la página
+  setRealViewportHeight();
+
+  // Y la volvemos a ejecutar si el usuario cambia el tamaño o rota el dispositivo
+  window.addEventListener('resize', setRealViewportHeight);
+  window.addEventListener('orientationchange', setRealViewportHeight);
+</script>
+</body>
 </body>
 </html>
 

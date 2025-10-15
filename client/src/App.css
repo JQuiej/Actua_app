@@ -47,10 +47,11 @@ body, html {
 
 .map-container-wrapper {
   display: flex;
-  height: 100%; /* Hereda la altura del body/#root */
+  /* Usamos nuestra variable JS. '100vh' es un fallback por si el JS falla. */
+  height: calc(var(--vh, 1vh) * 100);
   width: 100%;
   position: relative;
-  /* overflow: hidden; ya no es tan necesario aquí si está en el body */
+  overflow: hidden;
 }
 
 /* ==========================================================================
