@@ -857,11 +857,13 @@ body, html {
     display: none;
   }
 
-  .floating-buttons {
-    bottom: 20px;
+ .floating-buttons {
+    /* Usamos calc() para sumar un espacio base (20px) al área segura del dispositivo */
+    /* '20px' es el valor por defecto si el navegador no es compatible */
+    bottom: calc(20px + env(safe-area-inset-bottom));
     right: 20px;
-    gap: 10px;
-  }
+    gap: 15px;
+ }
 
   .floating-button {
     width: 56px;
