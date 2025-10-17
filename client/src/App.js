@@ -623,7 +623,7 @@ function App() {
         setShowAddModal(true);
     } else {
         // Si no hay usuario, muestra el mensaje para loguearse
-        toast.info('Para agregar un reporte, primero debes iniciar sesión.');
+        toast.info('Para agregar un reporte, primero debes iniciar sesión. ');
         // O podrías redirigir al usuario: navigate('/login');
     }
 };
@@ -1012,11 +1012,51 @@ function App() {
                         </button>
                         
                         {selectedReport.imageUrl ? 
-                            <img 
-                                src={selectedReport.imageUrl} 
-                                alt="Imagen del reporte" 
-                                className="detail-modal-image"
-                            /> 
+                            <div className="detail-modal-image-container">
+                                <img 
+                                    src={selectedReport.imageUrl} 
+                                    alt="Imagen del reporte" 
+                                    className="detail-modal-image"
+                                    // ... dentro del onClick de la imagen ...
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const img = e.target;
+                                        
+                                        if (!img.classList.contains('expanded')) {
+                                            // --- EXPANDIR LA IMAGEN ---
+                                            
+                                            // 1. Crear el backdrop
+                                            const backdrop = document.createElement('div');
+                                            backdrop.className = 'image-expanded-backdrop';
+                                            
+                                            // 2. CAMBIO IMPORTANTE: Colocar el backdrop en el body
+                                            document.body.appendChild(backdrop);
+                                            
+                                            // 3. CAMBIO IMPORTANTE: Mover la imagen al backdrop
+                                            backdrop.appendChild(img); 
+                                            
+                                            // 4. Agregar la clase 'expanded'
+                                            img.classList.add('expanded');
+                                            
+                                            // 5. Configurar el cierre
+                                            backdrop.onclick = () => {
+                                                // Al cerrar, mover la imagen de vuelta a su contenedor original
+                                                const originalContainer = document.querySelector('.detail-modal-image-container'); // ¡Asegúrate de que este selector sea correcto!
+                                                if (originalContainer) {
+                                                    originalContainer.appendChild(img);
+                                                }
+                                                img.classList.remove('expanded');
+                                                backdrop.remove();
+                                            };
+
+                                        } else {
+                                            // --- CERRAR LA IMAGEN ---
+                                            // La lógica de cierre ya está manejada por el backdrop.onclick
+                                        }
+                                    }}
+                                />
+                                <div className="image-hint">Toca para expandir</div>
+                            </div>
                             : 
                             <div className="detail-modal-no-image">
                                 <span>No hay imagen disponible</span>
