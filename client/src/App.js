@@ -10,17 +10,18 @@ import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
 import L from 'leaflet';
-import Swal from 'sweetalert2';
 import imageCompression from 'browser-image-compression';
 import { GoogleLogin } from '@react-oauth/google';
+import { Toaster, toast } from 'sonner'; // ✅ NUEVO: Sonner en lugar de SweetAlert
 
 axios.defaults.withCredentials = true;
 
 const categoryColors = {
-    'Emergencia': '#ef4444', 'Ayuda': '#10b981', 'Calle en mal estado': '#f59e0b',
-    'Servicio público': '#3b82f6', 'Otro': '#6b7280', 'Accidente de Tráfico': '#dc2626',
-    'Donación de Sangre': '#ec4899', 'Fallo Eléctrico': '#eab308', 'Fuga de Agua': '#06b6d4',
-    'Mascota Perdida/Encontrada': '#a855f7', 'Aviso Comunitario': '#2563eb', 
+    'Emergencia': '#ef4444', 'Persona Perdida': '#ef4444', 'Ayuda': '#10b981', 
+    'Calle en mal estado': '#f59e0b', 'Servicio público': '#3b82f6', 'Otro': '#6b7280', 
+    'Accidente de Tráfico': '#dc2626', 'Donación de Sangre': '#ec4899', 
+    'Fallo Eléctrico': '#eab308', 'Fuga de Agua': '#06b6d4',
+    'Mascota Perdida': '#a855f7', 'Aviso Comunitario': '#2563eb', 
     'Actividad Social/Cultural': '#8b5cf6'
 };
 
@@ -57,7 +58,7 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 const CATEGORIES = [
     'Emergencia', 'Ayuda', 'Calle en mal estado', 'Servicio público',
     'Donación de Sangre', 'Aviso Comunitario', 'Actividad Social/Cultural',
-    'Mascota Perdida/Encontrada', 'Accidente de Tráfico', 'Fallo Eléctrico',
+    'Mascota Perdida', 'Accidente de Tráfico', 'Fallo Eléctrico',
     'Fuga de Agua', 'Otro'
 ];
 
@@ -65,7 +66,6 @@ const RELEVANCE_ORDER = {
     'Emergencia': 1, 'Accidente de Tráfico': 2, 'Donación de Sangre': 3, 'Ayuda': 4
 };
 
-// NUEVA: Función para formatear tiempo relativo
 const timeAgo = (date) => {
     const seconds = Math.floor((new Date() - new Date(date)) / 1000);
     let interval = seconds / 31536000;
@@ -92,6 +92,37 @@ const showNotification = (title, body) => {
     }
 };
 
+// ✅ NUEVA: Función para corregir orientación de imagen (Samsung fix)
+const fixImageOrientation = async (file) => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Mantener dimensiones originales
+                canvas.width = img.width;
+                canvas.height = img.height;
+                
+                // Dibujar imagen correctamente orientada
+                ctx.drawImage(img, 0, 0);
+                
+                // Convertir canvas a blob
+                canvas.toBlob((blob) => {
+                    resolve(new File([blob], file.name, { 
+                        type: 'image/jpeg',
+                        lastModified: Date.now()
+                    }));
+                }, 'image/jpeg', 0.95);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+};
+
 function App() {
   const [reports, setReports] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
@@ -105,7 +136,7 @@ function App() {
   
   const [filterType, setFilterType] = useState('all');
   const [filterCategory, setFilterCategory] = useState('Todas');
-  const [filterStatus, setFilterStatus] = useState('activo'); // NUEVO
+  const [filterStatus, setFilterStatus] = useState('activo');
 
   const [newReportDesc, setNewReportDesc] = useState('');
   const [newReportCategory, setNewReportCategory] = useState('Otro');
@@ -115,8 +146,6 @@ function App() {
 
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  
-  // NUEVO: Estado para estadísticas
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
@@ -135,7 +164,6 @@ function App() {
         console.error("No se pudo obtener el usuario:", err);
     });
     
-    // NUEVO: Obtener estadísticas
     axios.get(`${API_URL}/stats`).then(res => {
         setStats(res.data);
     }).catch(err => {
@@ -177,7 +205,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Cargar reportes con filtros
     const params = new URLSearchParams();
     if (filterStatus !== 'all') params.append('status', filterStatus);
     if (filterCategory !== 'Todas') params.append('category', filterCategory);
@@ -190,8 +217,6 @@ function App() {
 
     socket.on('new_report', (newReport) => {
         setReports(prev => [newReport, ...prev]);
-        
-        // Actualizar estadísticas
         axios.get(`${API_URL}/stats`).then(res => setStats(res.data));
 
         if (userLocation && newReport.location && newReport.location.coordinates) {
@@ -216,11 +241,9 @@ function App() {
         if (selectedReport && selectedReport._id === deletedReportId) {
             setSelectedReport(null);
         }
-        // Actualizar estadísticas
         axios.get(`${API_URL}/stats`).then(res => setStats(res.data));
     });
     
-    // NUEVO: Escuchar actualizaciones de reportes
     socket.on('report_updated', (updatedReport) => {
         setReports(prev => prev.map(report => 
             report._id === updatedReport._id ? updatedReport : report
@@ -231,7 +254,7 @@ function App() {
     });
     
     return () => socket.disconnect();
-  }, [userLocation, filterStatus, filterCategory]);
+  }, [userLocation, filterStatus, filterCategory, selectedReport]);
 
   const panelContent = useMemo(() => {
     let processedReports = [...reports];
@@ -257,7 +280,6 @@ function App() {
       processedReports.sort((a, b) => b.reportCount - a.reportCount);
     } else {
       processedReports.sort((a, b) => {
-        // Ordenar por prioridad primero
         if (b.priority !== a.priority) return b.priority - a.priority;
         
         const relevanceA = RELEVANCE_ORDER[a.category] || 99;
@@ -283,19 +305,16 @@ function App() {
     return processedReports;
   }, [reports, filterType, filterCategory, userLocation, userMunicipality]);
 
-// CONTINUACIÓN DE APP.JS - FUNCIONES
-
+  // ✅ MEJORADO: Manejo de imágenes con corrección de orientación
   const handleSubmitReport = async () => {
     if (!userLocation || !newReportDesc) {
-        Swal.fire({ 
-            icon: 'warning', 
-            title: 'Faltan datos', 
-            text: 'Se requiere tu ubicación y una descripción.' 
-        });
+        toast.error('Se requiere tu ubicación y una descripción');
         return;
     }
     
     setIsSubmitting(true);
+    const loadingToast = toast.loading('Subiendo reporte...');
+    
     const formData = new FormData();
     formData.append('description', newReportDesc);
     formData.append('category', newReportCategory);
@@ -303,18 +322,19 @@ function App() {
 
     if (newReportImage) {
       try {
-        const compressedFile = await imageCompression(newReportImage, { 
+        // Corregir orientación primero (Samsung fix)
+        const fixedImage = await fixImageOrientation(newReportImage);
+        
+        // Luego comprimir
+        const compressedFile = await imageCompression(fixedImage, { 
             maxSizeMB: 1, 
-            maxWidthOrHeight: 1920 
+            maxWidthOrHeight: 1920,
+            useWebWorker: true
         });
         formData.append('image', compressedFile, compressedFile.name);
       } catch (error) {
-        console.error("Error al comprimir la imagen:", error);
-        Swal.fire({ 
-            icon: 'error', 
-            title: 'Error de imagen', 
-            text: 'No se pudo procesar la imagen.' 
-        });
+        console.error("Error al procesar la imagen:", error);
+        toast.error('No se pudo procesar la imagen', { id: loadingToast });
         setIsSubmitting(false);
         return;
       }
@@ -328,20 +348,10 @@ function App() {
         setNewReportDesc(''); 
         setNewReportCategory('Otro'); 
         setNewReportImage(null);
-        Swal.fire({ 
-            icon: 'success', 
-            title: '¡Reporte Enviado!', 
-            text: 'Gracias por contribuir a tu comunidad',
-            timer: 2500, 
-            showConfirmButton: false 
-        });
+        toast.success('¡Reporte enviado! Gracias por contribuir', { id: loadingToast });
     } catch(err) {
         console.error("Error al crear reporte:", err);
-        Swal.fire({ 
-            icon: 'error', 
-            title: 'Error', 
-            text: 'Hubo un error al crear el reporte.' 
-        });
+        toast.error('Hubo un error al crear el reporte', { id: loadingToast });
     } finally {
         setIsSubmitting(false);
     }
@@ -350,67 +360,78 @@ function App() {
   const handleRecenter = () => { 
       if (userLocation) {
           setCenter(userLocation);
-          Swal.fire({
-              toast: true,
-              position: 'top-end',
-              icon: 'success',
-              title: 'Centrado en tu ubicación',
-              showConfirmButton: false,
-              timer: 1500
-          });
+          toast.success('Centrado en tu ubicación');
       }
   };
 
   const handleReportAbuse = async (reportId) => {
     try {
         await axios.post(`${API_URL}/reports/${reportId}/report`, {});
-        Swal.fire({
-            icon: 'success',
-            title: 'Reportado', 
-            text: 'Gracias por tu aporte. Revisaremos este reporte.',
-            timer: 2500
-        });
-        // Actualizar el reporte localmente
+        toast.success('Gracias por tu aporte. Revisaremos este reporte');
         const updatedReport = await axios.get(`${API_URL}/reports`);
         setReports(updatedReport.data);
     } catch (error) {
-        Swal.fire(
-            'Error', 
-            error.response?.data?.message || 'No se pudo enviar el reporte.', 
-            'error'
-        );
+        toast.error(error.response?.data?.message || 'No se pudo enviar el reporte');
     }
   };
 
   const handleDeleteReport = async (reportId) => {
-    const result = await Swal.fire({
-        title: '¿Estás seguro?',
-        text: 'Esta acción no se puede deshacer',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Sí, eliminar',
-        cancelButtonText: 'Cancelar'
-    });
-    
-    if (result.isConfirmed) {
-        try {
-            await axios.delete(`${API_URL}/reports/${reportId}`);
-            Swal.fire({
-                icon: 'success',
-                title: 'Eliminado', 
-                text: 'El reporte ha sido eliminado.',
-                timer: 2000
-            });
-            setSelectedReport(null);
-        } catch (error) {
-            Swal.fire('Error', 'No se pudo eliminar el reporte.', 'error');
-        }
-    }
+    toast.custom((t) => (
+      <div style={{
+        background: 'white',
+        padding: '16px',
+        borderRadius: '12px',
+        boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px'
+      }}>
+        <div>
+          <strong>¿Estás seguro?</strong>
+          <p style={{ margin: '8px 0', color: '#64748b' }}>
+            Esta acción no se puede deshacer
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => toast.dismiss(t)}
+            style={{
+              padding: '8px 16px',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              background: 'white',
+              cursor: 'pointer'
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t);
+              try {
+                await axios.delete(`${API_URL}/reports/${reportId}`);
+                toast.success('Reporte eliminado');
+                setSelectedReport(null);
+              } catch (error) {
+                toast.error('No se pudo eliminar el reporte');
+              }
+            }}
+            style={{
+              padding: '8px 16px',
+              border: 'none',
+              borderRadius: '6px',
+              background: '#ef4444',
+              color: 'white',
+              cursor: 'pointer'
+            }}
+          >
+            Eliminar
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   };
   
-  // NUEVO: Confirmar/Desconfirmar reporte
   const handleConfirmReport = async (reportId) => {
     try {
         const response = await axios.post(
@@ -418,71 +439,137 @@ function App() {
             {}
         );
         
-        const Toast = Swal.mixin({
-            toast: true,
-            position: 'top-end',
-            showConfirmButton: false,
-            timer: 2000,
-            timerProgressBar: true,
-        });
+        toast.success(response.data.message);
         
-        Toast.fire({
-            icon: 'success',
-            title: response.data.message
-        });
-        
-        // Actualizar reportes
         const updatedReports = await axios.get(`${API_URL}/reports`);
         setReports(updatedReports.data);
         
-        // Actualizar reporte seleccionado
         const updatedReport = updatedReports.data.find(r => r._id === reportId);
         if (updatedReport) setSelectedReport(updatedReport);
         
     } catch (error) {
-        Swal.fire(
-            'Error', 
-            'No se pudo confirmar el reporte', 
-            'error'
-        );
+        toast.error('No se pudo confirmar el reporte');
     }
   };
   
-  // NUEVO: Marcar como resuelto
   const handleResolveReport = async (reportId) => {
-    const result = await Swal.fire({
-        title: '¿Marcar como resuelto?',
-        text: 'Esto indicará que la situación ya fue atendida',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#10b981',
-        cancelButtonColor: '#6b7280',
-        confirmButtonText: 'Sí, marcar',
-        cancelButtonText: 'Cancelar'
-    });
-    
-    if (result.isConfirmed) {
-        try {
-            await axios.patch(`${API_URL}/reports/${reportId}/resolve`, {});
-            Swal.fire({
-                icon: 'success',
-                title: '¡Marcado como resuelto!',
-                timer: 2000
-            });
-            
-            // Actualizar reportes
-            const updatedReports = await axios.get(`${API_URL}/reports`);
-            setReports(updatedReports.data);
-            setSelectedReport(null);
-        } catch (error) {
-            Swal.fire('Error', error.response?.data?.message || 'No se pudo actualizar', 'error');
-        }
-    }
+    toast.custom((t) => (
+      <div style={{
+        background: 'white',
+        padding: '16px',
+        borderRadius: '12px',
+        boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px'
+      }}>
+        <div>
+          <strong>¿Marcar como resuelto?</strong>
+          <p style={{ margin: '8px 0', color: '#64748b' }}>
+            Esto indicará que la situación ya fue atendida
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => toast.dismiss(t)}
+            style={{
+              padding: '8px 16px',
+              border: '1px solid #e2e8f0',
+              borderRadius: '6px',
+              background: 'white',
+              cursor: 'pointer'
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={async () => {
+              toast.dismiss(t);
+              try {
+                await axios.patch(`${API_URL}/reports/${reportId}/resolve`, {});
+                toast.success('¡Marcado como resuelto!');
+                const updatedReports = await axios.get(`${API_URL}/reports`);
+                setReports(updatedReports.data);
+                setSelectedReport(null);
+              } catch (error) {
+                toast.error('No se pudo actualizar');
+              }
+            }}
+            style={{
+              padding: '8px 16px',
+              border: 'none',
+              borderRadius: '6px',
+              background: '#10b981',
+              color: 'white',
+              cursor: 'pointer'
+            }}
+          >
+            Confirmar
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   };
 
   const googleLoginSuccess = () => {
-    window.location.href = `${API_URL}/auth/google`;
+  const width = 500;
+  const height = 600;
+  const left = window.screen.width / 2 - width / 2;
+  const top = window.screen.height / 2 - height / 2;
+  
+  const popup = window.open(
+    `${API_URL}/auth/google`,
+    'Google Login',
+    `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`
+  );
+  
+  // Escuchar mensajes del popup
+  const messageHandler = (event) => {
+    // Verificar origen por seguridad
+    if (event.origin !== API_URL) return;
+    
+    if (event.data === 'login_success') {
+      // Recargar datos del usuario
+      axios.get(`${API_URL}/auth/me`).then(res => {
+        if (res.data) {
+          setUser(res.data);
+          if (res.data.role === 'admin') setIsAdmin(true);
+          toast.success(`¡Bienvenido ${res.data.displayName}!`);
+        }
+      }).catch(err => {
+        console.error('Error al obtener usuario:', err);
+        toast.error('Error al iniciar sesión');
+      });
+      
+      // Limpiar listener
+      window.removeEventListener('message', messageHandler);
+    } else if (event.data === 'login_failure') {
+      toast.error('Error al iniciar sesión con Google');
+      window.removeEventListener('message', messageHandler);
+    }
   };
+  
+  window.addEventListener('message', messageHandler);
+  
+  // Fallback: si el popup se cierra sin mensaje
+  const checkPopup = setInterval(() => {
+    if (popup && popup.closed) {
+      clearInterval(checkPopup);
+      window.removeEventListener('message', messageHandler);
+      
+      // Verificar si el usuario se autenticó
+      setTimeout(() => {
+        axios.get(`${API_URL}/auth/me`).then(res => {
+          if (res.data && !user) {
+            setUser(res.data);
+            if (res.data.role === 'admin') setIsAdmin(true);
+            toast.success(`¡Bienvenido ${res.data.displayName}!`);
+          }
+        });
+      }, 1000);
+    }
+  }, 500);
+};
 
   // NUEVO: Determinar si el usuario puede confirmar este reporte
   const canConfirm = (report) => {
@@ -506,9 +593,50 @@ function App() {
     return `${(distance / 1000).toFixed(1)}km`;
   };
 
+  const handleLogout = async () => {
+    try {
+        await axios.get(`${API_URL}/auth/logout`);
+        // Si el servidor devuelve 2xx, la lógica de abajo se ejecuta.
+    } catch (error) {
+        // Si el servidor devuelve 401, cae aquí.
+        // Aquí no se muestra el toast de error porque sabemos que el 401 es esperado/funcional.
+        console.warn('Advertencia al cerrar sesión (Posiblemente 401 esperado):', error); 
+    }
+
+    // Estas líneas se ejecutan *después* del try o el catch.
+    setUser(null);
+    setIsAdmin(false);
+    toast.success('Sesión cerrada correctamente');
+
+    // ... Recargar reportes ...
+    const params = new URLSearchParams();
+    if (filterStatus !== 'all') params.append('status', filterStatus);
+    if (filterCategory !== 'Todas') params.append('category', filterCategory);
+    axios.get(`${API_URL}/reports?${params.toString()}`)
+        .then(res => setReports(res.data))
+        .catch(err => console.error("Error cargando reportes:", err));
+};  
+
+    const handleAddReportClick = () => {
+    if (user) {
+        // Si hay usuario logueado, abre el modal
+        setShowAddModal(true);
+    } else {
+        // Si no hay usuario, muestra el mensaje para loguearse
+        toast.info('Para agregar un reporte, primero debes iniciar sesión.');
+        // O podrías redirigir al usuario: navigate('/login');
+    }
+};
+
   // RETURN DEL COMPONENTE PRINCIPAL
   return (
-    // CONTINUACIÓN - JSX DEL COMPONENTE
+    <>
+    <Toaster 
+        position="top-right" 
+        expand={true}
+        richColors
+        closeButton
+      />
 
     <div className="map-container-wrapper">
         {isMobile && isPanelOpen && (
@@ -559,20 +687,67 @@ function App() {
             
             {user ? (
                 <div className="user-info">
-                    <img src={user.image} alt="Perfil" />
+                    <img 
+                        src={user.image || user.picture || 'https://via.placeholder.com/48'} 
+                        alt="Perfil"
+                        onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = 'https://ui-avatars.com/api/?name=' + 
+                                encodeURIComponent(user.displayName || 'User') + 
+                                '&background=2563eb&color=fff&size=48';
+                        }}
+                    />
                     <div>
-                        <p className="display-name">{user.displayName}</p>
-                        <a href={`${API_URL}/auth/logout`} className="logout-link">
+                        <p className="display-name">{user.displayName || user.name || 'Usuario'}</p>
+                        <a 
+                            href="#" 
+                            onClick={(e) => {
+                                e.preventDefault();
+                                handleLogout();
+                            }} 
+                            className="logout-link"
+                        >
                             Cerrar sesión
                         </a>
                     </div>
                 </div>
             ) : ( 
                 <div style={{ marginBottom: '20px' }}>
-                    <GoogleLogin 
-                        onSuccess={googleLoginSuccess} 
-                        onError={() => console.log('Login Failed')} 
-                    />
+                    <button
+                        onClick={googleLoginSuccess}
+                        style={{
+                            width: '100%',
+                            padding: '12px',
+                            background: 'white',
+                            border: '1px solid #dadce0',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '12px',
+                            cursor: 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            color: '#3c4043',
+                            transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                            e.target.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
+                            e.target.style.backgroundColor = '#f8f9fa';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.target.style.boxShadow = 'none';
+                            e.target.style.backgroundColor = 'white';
+                        }}
+                    >
+                        <svg width="18" height="18" viewBox="0 0 18 18">
+                            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+                            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
+                            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.593.102-1.17.282-1.707V4.961H.957C.347 6.175 0 7.55 0 9s.348 2.825.957 4.039l3.007-2.332z"/>
+                            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+                        </svg>
+                        Continuar con Google
+                    </button>
                 </div>
             )}
 
@@ -804,16 +979,21 @@ function App() {
                     </button>
                 )}
                 
-                {user && (
-                    <button 
-                        className="floating-button add-report-button" 
-                        title={isLocating ? "Obteniendo ubicación..." : "Agregar reporte"} 
-                        onClick={() => setShowAddModal(true)} 
-                        disabled={isLocating}
-                    >
-                        +
-                    </button>
-                )}
+                <button 
+                    className="floating-button add-report-button" 
+                    // Usamos 'user ? ... : ...' para el título
+                    title={
+                        user 
+                        ? (isLocating ? "Obteniendo ubicación..." : "Agregar reporte") 
+                        : "Inicia sesión para agregar un reporte"
+                    } 
+                    // Llamamos a la nueva función
+                    onClick={handleAddReportClick} 
+                    // El botón se deshabilita si está localizando, NO si no hay usuario
+                    disabled={isLocating}
+                >
+                    +
+                </button>
             </div>
 
             {/* MODAL DE DETALLE MEJORADO */}
@@ -1053,6 +1233,7 @@ function App() {
             )}
         </div>
     </div>
+    </>
   );
 }
 

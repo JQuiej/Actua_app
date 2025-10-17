@@ -6,7 +6,8 @@ const TEMPORARY_CATEGORIES = {
     'Fallo Eléctrico': 6 * 60 * 60 * 1000,           // 6 horas
     'Fuga de Agua': 6 * 60 * 60 * 1000,              // 6 horas
     'Emergencia': 4 * 60 * 60 * 1000,                // 4 horas
-    'Actividad Social/Cultural': 24 * 60 * 60 * 1000 // 24 horas
+    'Actividad Social/Cultural': 24 * 60 * 60 * 1000, // 24 horas
+    'Otro': 24 * 60 * 60 * 1000 // 24 horas
 };
 
 const ReportSchema = new mongoose.Schema({
@@ -22,7 +23,7 @@ const ReportSchema = new mongoose.Schema({
         enum: [
             'Emergencia', 'Ayuda', 'Calle en mal estado', 'Servicio público',
             'Donación de Sangre', 'Aviso Comunitario', 'Actividad Social/Cultural',
-            'Mascota Perdida/Encontrada', 'Accidente de Tráfico', 'Fallo Eléctrico',
+            'Mascota Perdida', 'Persona Perdida', 'Accidente de Tráfico', 'Fallo Eléctrico',
             'Fuga de Agua', 'Otro'
         ],
         default: 'Otro'

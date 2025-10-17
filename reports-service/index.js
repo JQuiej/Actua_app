@@ -15,7 +15,6 @@ const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
 
-// --- LOG DE DIAGNÓSTICO ---
 console.log("--- VARIABLES DE ENTORNO EN PRODUCCIÓN ---");
 console.log("NODE_ENV:", process.env.NODE_ENV);
 console.log("FRONTEND_URL:", process.env.FRONTEND_URL);
@@ -35,47 +34,68 @@ const storage = new CloudinaryStorage({
 
 const upload = multer({ storage: storage });
 const Report = require('./models/Report');
-const User = require('./models/user'); // CORREGIDO: Usar el mismo casing que el archivo real
+const User = require('./models/user');
 
 const app = express();
 
-// --- CONFIGURACIÓN DE CORS DEFINITIVA ---
+// ✅ CONFIGURACIÓN CORS MEJORADA PARA SAFARI/iOS
 const allowedOrigins = [
     'http://localhost:3000',
-    process.env.FRONTEND_URL 
-];
+    process.env.FRONTEND_URL
+].filter(Boolean); // Elimina valores undefined
 
 console.log('Orígenes CORS permitidos:', allowedOrigins);
 
 const corsOptions = {
   origin: function (origin, callback) {
     console.log('Petición recibida del origen:', origin);
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+    // Permitir requests sin origin (mobile apps, Postman, etc)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      console.warn('Origen bloqueado por CORS:', origin);
       callback(new Error('Origen no permitido por CORS'));
     }
   },
   credentials: true,
-  methods: ["GET", "POST", "DELETE", "PATCH"] // CORREGIDO: Agregado PATCH
+  methods: ["GET", "POST", "DELETE", "PATCH", "PUT", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  exposedHeaders: ["set-cookie"],
+  maxAge: 86400 // 24 horas
 };
 
 app.use(cors(corsOptions));
 app.use(express.json());
 
-const backendUrl = process.env.NODE_ENV === 'production' ? process.env.BACKEND_URL : 'http://localhost:5000';
+const backendUrl = process.env.NODE_ENV === 'production' 
+    ? process.env.BACKEND_URL 
+    : 'http://localhost:5000';
 
-app.set('trust proxy', 1); 
+// ✅ Trust proxy mejorado para producción
+if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+}
 
+// ✅ CONFIGURACIÓN DE SESIÓN MEJORADA PARA SAFARI/iOS
 app.use(session({
     secret: process.env.SESSION_SECRET || 'secretkey',
     resave: false,
     saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
+    store: MongoStore.create({ 
+        mongoUrl: process.env.MONGO_URI,
+        touchAfter: 24 * 3600 // Actualizar sesión solo una vez cada 24 horas
+    }),
+    name: 'actua.sid', // Nombre personalizado de cookie
     cookie: {
         secure: process.env.NODE_ENV === 'production', 
         httpOnly: true,
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' 
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+        domain: process.env.NODE_ENV === 'production' 
+            ? process.env.COOKIE_DOMAIN  // Ej: '.tudominio.com'
+            : undefined
     }
 }));
 
@@ -85,7 +105,8 @@ app.use(passport.session());
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: `${backendUrl}/auth/google/callback`
+    callbackURL: `${backendUrl}/auth/google/callback`,
+    proxy: true // ✅ IMPORTANTE para HTTPS en producción
   },
   async (accessToken, refreshToken, profile, done) => {
     try {
@@ -122,13 +143,16 @@ mongoose.connect(process.env.MONGO_URI)
     .then(() => console.log("Conexión a MongoDB exitosa"))
     .catch(err => console.error("Error de conexión a MongoDB:", err));
 
-// --- FUNCIONES AUXILIARES ---
 const getMunicipality = async (lat, lng) => {
     try {
         const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&countrycodes=gt&accept-language=es`;
-        const response = await axios.get(url, { headers: { 'User-Agent': 'ActuaApp/1.0 (tu.email.real@ejemplo.com)' } });
+        const response = await axios.get(url, { 
+            headers: { 'User-Agent': 'ActuaApp/1.0' },
+            timeout: 5000
+        });
         const address = response.data.address;
-        return address.city || address.town || address.state_district || address.county || address.state || 'No identificado';
+        return address.city || address.town || address.state_district || 
+               address.county || address.state || 'No identificado';
     } catch (error) {
         console.error("Error en Reverse Geocoding:", error.message);
         return 'No identificado';
@@ -150,19 +174,70 @@ const ensureAdmin = (req, res, next) => {
 };
 
 // --- RUTAS DE AUTENTICACIÓN ---
-app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+app.get('/auth/google', passport.authenticate('google', { 
+    scope: ['profile', 'email'],
+    prompt: 'select_account' // ✅ Forzar selección de cuenta
+}));
 
+// ✅ CALLBACK MEJORADO PARA POPUP (Safari/iOS compatible)
 app.get('/auth/google/callback', 
-    passport.authenticate('google', { 
-        failureRedirect: process.env.FRONTEND_URL || 'http://localhost:3000' 
-    }), 
-    (req, res) => res.redirect(process.env.FRONTEND_URL || 'http://localhost:3000')
+    passport.authenticate('google', { failureRedirect: '/auth/failure' }), 
+    (req, res) => {
+        // En lugar de redirect, enviar HTML que cierra el popup
+        res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Login Exitoso</title>
+            </head>
+            <body>
+                <script>
+                    // Notificar a la ventana padre y cerrar popup
+                    if (window.opener) {
+                        window.opener.postMessage('login_success', '*');
+                        window.close();
+                    } else {
+                        // Si no es popup, redirigir normalmente
+                        window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}';
+                    }
+                </script>
+                <p>Autenticación exitosa. Esta ventana se cerrará automáticamente...</p>
+            </body>
+            </html>
+        `);
+    }
 );
+
+// ✅ NUEVA: Ruta de fallo de autenticación
+app.get('/auth/failure', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Error de Autenticación</title>
+        </head>
+        <body>
+            <script>
+                if (window.opener) {
+                    window.opener.postMessage('login_failure', '*');
+                    window.close();
+                } else {
+                    window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}';
+                }
+            </script>
+            <p>Error en la autenticación. Redirigiendo...</p>
+        </body>
+        </html>
+    `);
+});
 
 app.get('/auth/logout', (req, res, next) => { 
     req.logout(err => { 
-        if (err) { return next(err); } 
-        res.redirect(process.env.FRONTEND_URL || 'http://localhost:3000'); 
+        if (err) { return next(err); }
+        req.session.destroy((err) => {
+            res.clearCookie('actua.sid');
+            res.redirect(process.env.FRONTEND_URL || 'http://localhost:3000');
+        });
     }); 
 });
 
@@ -172,7 +247,6 @@ app.get('/auth/me', (req, res) => {
 
 // --- RUTAS DE REPORTES ---
 
-// OBTENER REPORTES (con filtros)
 app.get('/reports', async (req, res) => {
     try {
         const { status, category, municipality } = req.query;
@@ -233,7 +307,6 @@ app.get('/reports', async (req, res) => {
     }
 });
 
-// CREAR REPORTE
 app.post('/reports', ensureAuth, upload.single('image'), async (req, res) => {
     try {
         const { description, category, coordinates } = req.body;
@@ -259,7 +332,6 @@ app.post('/reports', ensureAuth, upload.single('image'), async (req, res) => {
     }
 });
 
-// REPORTAR ABUSO
 app.post('/reports/:id/report', ensureAuth, async (req, res) => {
     try {
         const report = await Report.findById(req.params.id);
@@ -280,7 +352,6 @@ app.post('/reports/:id/report', ensureAuth, async (req, res) => {
     }
 });
 
-// CONFIRMAR/DESCONFIRMAR REPORTE
 app.post('/reports/:id/confirm', ensureAuth, async (req, res) => {
     try {
         const report = await Report.findById(req.params.id);
@@ -290,10 +361,8 @@ app.post('/reports/:id/confirm', ensureAuth, async (req, res) => {
         const alreadyConfirmed = report.confirmedBy.includes(userId);
         
         if (alreadyConfirmed) {
-            // Remover confirmación
             report.confirmedBy = report.confirmedBy.filter(id => id.toString() !== userId);
         } else {
-            // Agregar confirmación
             report.confirmedBy.push(userId);
         }
         
@@ -310,13 +379,11 @@ app.post('/reports/:id/confirm', ensureAuth, async (req, res) => {
     }
 });
 
-// MARCAR COMO RESUELTO
 app.patch('/reports/:id/resolve', ensureAuth, async (req, res) => {
     try {
         const report = await Report.findById(req.params.id);
         if (!report) return res.status(404).json({ message: 'Reporte no encontrado' });
         
-        // Solo el creador o admin puede resolver
         if (report.createdBy.toString() !== req.user.id && req.user.role !== 'admin') {
             return res.status(403).json({ message: 'No autorizado' });
         }
@@ -331,7 +398,6 @@ app.patch('/reports/:id/resolve', ensureAuth, async (req, res) => {
     }
 });
 
-// ELIMINAR REPORTE (solo admin)
 app.delete('/reports/:id', ensureAdmin, async (req, res) => {
     try {
         const report = await Report.findByIdAndDelete(req.params.id);
@@ -345,7 +411,6 @@ app.delete('/reports/:id', ensureAdmin, async (req, res) => {
     }
 });
 
-// OBTENER ESTADÍSTICAS
 app.get('/stats', async (req, res) => {
     try {
         const totalReports = await Report.countDocuments();
@@ -376,7 +441,7 @@ app.get('/stats', async (req, res) => {
     }
 });
 
-// --- TAREA PROGRAMADA: LIMPIEZA AUTOMÁTICA ---
+// --- TAREA PROGRAMADA ---
 cron.schedule('0 * * * *', async () => {
     console.log('Ejecutando limpieza automática de reportes...');
     try {
@@ -386,6 +451,10 @@ cron.schedule('0 * * * *', async () => {
     }
 });
 
-// --- INICIAR SERVIDOR ---
+// ✅ HEALTH CHECK
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date() });
+});
+
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Servidor corriendo en el puerto ${PORT}`));
