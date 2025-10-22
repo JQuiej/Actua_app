@@ -108,45 +108,53 @@ const handleGoogleLogin = () => {
     checkAuth = setInterval(() => {
         const authSuccess = localStorage.getItem('auth_success');
         
-        // Verificar éxito O cierre manual de la ventana
-        if (authSuccess || popupWindow.closed) {
+        // 🌟 MODIFICACIÓN CLAVE: Solo verificamos authSuccess, ignoramos popupWindow.closed
+        // Esto evita el error de Cross-Origin-Opener-Policy
+        if (authSuccess) {
             clearInterval(checkAuth);
             localStorage.removeItem('auth_success');
 
-            if (authSuccess) {
-                // Éxito: La cookie se estableció, obtener usuario
-                fetch(`${apiUrl}/auth/me`, { credentials: 'include' })
-                    .then(res => res.json())
-                    .then(user => {
-                        if (user && user.id) {
-                            // 🌟 Solución: Recargar la página para forzar la actualización de la UI
-                            // onSuccess(user) se llama antes de recargar por si hay lógica adicional
-                            onSuccess(user); 
-                            window.location.reload(); 
-                        } else {
-                            console.error('Autenticación marcada, pero no se pudo obtener el perfil del usuario.');
-                            onClose(); 
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error al obtener el perfil de usuario:', error);
-                        onClose();
-                    });
-            } else {
-                // La ventana se cerró manualmente sin éxito
-                console.log('Ventana de login cerrada por el usuario.');
-                onClose();
-            }
+            // Éxito: La cookie se estableció, obtener usuario
+            fetch(`${apiUrl}/auth/me`, { credentials: 'include' })
+                .then(res => res.json())
+                .then(user => {
+                    if (user && user.id) {
+                        // Forzar la actualización de la UI
+                        onSuccess(user); 
+                        
+                        // Si la recarga no funcionó antes, podría ser un problema de caché.
+                        // Usamos window.location.assign() para asegurar una carga fresca.
+                        window.location.assign(window.location.href); 
+                    } else {
+                        console.error('Autenticación marcada, pero no se pudo obtener el perfil del usuario.');
+                        onClose(); 
+                    }
+                })
+                .catch(error => {
+                    console.error('Error al obtener el perfil de usuario:', error);
+                    onClose();
+                });
         }
+        
+        // También incluimos una comprobación fuera del éxito, aunque dará el warning,
+        // para detener el polling si el usuario cierra la ventana manualmente antes del timeout.
+        if (popupWindow.closed) {
+             clearInterval(checkAuth);
+             onClose();
+             console.log('Ventana de login cerrada por el usuario o por el servidor.');
+        }
+
     }, 500); 
 
     // 4. Timeout de respaldo (2 minutos)
     setTimeout(() => {
         clearInterval(checkAuth);
-        if (!popupWindow.closed) {
-             // Opcional: Cerrar el popup después del timeout
-             // popupWindow.close(); 
+        
+        // Si el popup sigue abierto después del timeout, lo cerramos
+        if (popupWindow && !popupWindow.closed) {
+             popupWindow.close(); 
         }
+        
         console.log('Timeout de autenticación alcanzado.');
         onClose();
     }, 120000); 
@@ -235,7 +243,7 @@ const handleGoogleLogin = () => {
             )}
           </button>
         </form>
-
+            {/*
         <div className="auth-divider">
           <span>o continúa con</span>
         </div>
@@ -253,7 +261,7 @@ const handleGoogleLogin = () => {
           </svg>
           Google
         </button>
-
+        */}
         <div className="auth-switch">
           {isLogin ? '¿No tienes cuenta?' : '¿Ya tienes cuenta?'}
           {' '}

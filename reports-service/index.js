@@ -78,7 +78,7 @@ if (process.env.NODE_ENV === 'production') {
     app.set('trust proxy', 1);
 }
 
-// ✅ CONFIGURACIÓN DE SESIÓN MEJORADA
+// ✅ CONFIGURACIÓN DE SESIÓN CORREGIDA (Eliminando 'domain' en la mayoría de los casos)
 app.use(session({
     secret: process.env.SESSION_SECRET || 'secretkey',
     resave: false,
@@ -91,11 +91,13 @@ app.use(session({
     cookie: {
         secure: process.env.NODE_ENV === 'production', 
         httpOnly: true,
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        // Si estás en producción, sameSite debe ser 'none' para Cross-Site.
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', 
         maxAge: 7 * 24 * 60 * 60 * 1000,
-        domain: process.env.NODE_ENV === 'production' 
-            ? process.env.COOKIE_DOMAIN
-            : undefined
+        
+        // 🚨 CRÍTICO: ELIMINA O COMENTA LA PROPIEDAD 'domain'.
+        // Si no la necesitas, es mejor dejarla fuera.
+        // domain: process.env.NODE_ENV === 'production' ? process.env.COOKIE_DOMAIN : undefined 
     }
 }));
 
