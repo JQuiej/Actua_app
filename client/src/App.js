@@ -4,6 +4,7 @@ import io from 'socket.io-client';
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from 'react-leaflet';
 import MarkerClusterGroup from '@changey/react-leaflet-markercluster';
 import useNotifications from './hooks/useNotifications';
+import EXIF from 'exif-js';
 
 import './App.css';
 import 'leaflet/dist/leaflet.css';
@@ -83,33 +84,56 @@ const timeAgo = (date) => {
     return "ahora";
 };
 
-// ✅ NUEVA: Función para corregir orientación de imagen (Samsung fix)
 const fixImageOrientation = async (file) => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const img = new Image();
             img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                
-                // Mantener dimensiones originales
-                canvas.width = img.width;
-                canvas.height = img.height;
-                
-                // Dibujar imagen correctamente orientada
-                ctx.drawImage(img, 0, 0);
-                
-                // Convertir canvas a blob
-                canvas.toBlob((blob) => {
-                    resolve(new File([blob], file.name, { 
-                        type: 'image/jpeg',
-                        lastModified: Date.now()
-                    }));
-                }, 'image/jpeg', 0.95);
+                // Leer orientación EXIF
+                EXIF.getData(img, function() {
+                    const orientation = EXIF.getTag(this, "Orientation") || 1;
+                    
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    // Ajustar canvas según orientación
+                    if (orientation > 4) {
+                        canvas.width = height;
+                        canvas.height = width;
+                    } else {
+                        canvas.width = width;
+                        canvas.height = height;
+                    }
+                    
+                    // Aplicar transformaciones según EXIF
+                    switch (orientation) {
+                        case 2: ctx.transform(-1, 0, 0, 1, width, 0); break;
+                        case 3: ctx.transform(-1, 0, 0, -1, width, height); break;
+                        case 4: ctx.transform(1, 0, 0, -1, 0, height); break;
+                        case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
+                        case 6: ctx.transform(0, 1, -1, 0, height, 0); break;
+                        case 7: ctx.transform(0, -1, -1, 0, height, width); break;
+                        case 8: ctx.transform(0, -1, 1, 0, 0, width); break;
+                    }
+                    
+                    ctx.drawImage(img, 0, 0);
+                    
+                    canvas.toBlob((blob) => {
+                        resolve(new File([blob], file.name, { 
+                            type: 'image/jpeg',
+                            lastModified: Date.now()
+                        }));
+                    }, 'image/jpeg', 0.92);
+                });
             };
+            img.onerror = reject;
             img.src = e.target.result;
         };
+        reader.onerror = reject;
         reader.readAsDataURL(file);
     });
 };
