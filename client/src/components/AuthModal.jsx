@@ -81,42 +81,41 @@ const AuthModal = ({ onClose, onSuccess, apiUrl }) => {
   };
 
   const handleGoogleLogin = () => {
-    const width = 500;
-    const height = 600;
-    const left = window.screen.width / 2 - width / 2;
-    const top = window.screen.height / 2 - height / 2;
+  const width = 500;
+  const height = 600;
+  const left = window.screen.width / 2 - width / 2;
+  const top = window.screen.height / 2 - height / 2;
+  
+  window.open(
+    `${apiUrl}/auth/google`,
+    'Google Login',
+    `width=${width},height=${height},left=${left},top=${top}`
+  );
+  
+  // Polling: revisar cookie cada segundo
+  const checkAuth = setInterval(() => {
+    const authSuccess = document.cookie.includes('auth_success=true');
     
-    const popup = window.open(
-      `${apiUrl}/auth/google`,
-      'Google Login',
-      `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`
-    );
-    
-    const messageHandler = (event) => {
-      if (event.origin !== apiUrl) return;
+    if (authSuccess) {
+      clearInterval(checkAuth);
+      // Limpiar cookie
+      document.cookie = 'auth_success=; max-age=0';
       
-      if (event.data === 'login_success') {
-        fetch(`${apiUrl}/auth/me`, { credentials: 'include' })
-          .then(res => res.json())
-          .then(user => {
-            if (user) {
-              onSuccess(user);
-              onClose();
-            }
-          });
-        window.removeEventListener('message', messageHandler);
-      }
-    };
-    
-    window.addEventListener('message', messageHandler);
-    
-    const checkPopup = setInterval(() => {
-      if (popup && popup.closed) {
-        clearInterval(checkPopup);
-        window.removeEventListener('message', messageHandler);
-      }
-    }, 500);
-  };
+      // Obtener usuario
+      fetch(`${apiUrl}/auth/me`, { credentials: 'include' })
+        .then(res => res.json())
+        .then(user => {
+          if (user) {
+            onSuccess(user);
+            onClose();
+          }
+        });
+    }
+  }, 1000);
+  
+  // Timeout después de 2 minutos
+  setTimeout(() => clearInterval(checkAuth), 120000);
+};
 
   return (
     <>

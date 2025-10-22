@@ -363,74 +363,31 @@ app.get('/auth/google', passport.authenticate('google', {
     prompt: 'select_account'
 }));
 
-// ✅ CALLBACK MEJORADO PARA iOS
 app.get('/auth/google/callback', 
     passport.authenticate('google', { failureRedirect: '/auth/failure' }), 
     (req, res) => {
+        res.cookie('auth_success', 'true', { 
+            maxAge: 5000, 
+            httpOnly: false,
+            secure: true,
+            sameSite: 'none'
+        });
+        
+        // HTML que cierra el popup
         res.send(`
             <!DOCTYPE html>
             <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Login Exitoso</title>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                    }
-                    .container {
-                        text-align: center;
-                        padding: 2rem;
-                    }
-                    .spinner {
-                        border: 4px solid rgba(255,255,255,0.3);
-                        border-top: 4px solid white;
-                        border-radius: 50%;
-                        width: 40px;
-                        height: 40px;
-                        animation: spin 1s linear infinite;
-                        margin: 0 auto 1rem;
-                    }
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
-                    }
-                </style>
-            </head>
+            <head><title>Login Exitoso</title></head>
             <body>
-                <div class="container">
-                    <div class="spinner"></div>
-                    <h2>✅ Autenticación exitosa</h2>
-                    <p>Redirigiendo...</p>
-                </div>
                 <script>
-                    (function() {
-                        // Intentar múltiples métodos para cerrar/redirigir
-                        const frontendUrl = '${process.env.FRONTEND_URL || 'http://localhost:3000'}';
-                        
-                        // Método 1: PostMessage al opener (popup)
-                        if (window.opener && !window.opener.closed) {
-                            try {
-                                window.opener.postMessage('login_success', '*');
-                                setTimeout(() => window.close(), 500);
-                            } catch (e) {
-                                console.error('Error con opener:', e);
-                                window.location.href = frontendUrl;
-                            }
-                        } 
-                        // Método 2: Redirección directa (ventana completa)
-                        else {
-                            window.location.href = frontendUrl;
+                    window.close();
+                    setTimeout(() => {
+                        if (!window.closed) {
+                            window.location.href = '${process.env.FRONTEND_URL}';
                         }
-                    })();
+                    }, 500);
                 </script>
+                <p>Autenticación exitosa. Cerrando ventana...</p>
             </body>
             </html>
         `);
