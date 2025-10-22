@@ -3,12 +3,14 @@ import axios from 'axios';
 import io from 'socket.io-client';
 import { MapContainer, TileLayer, Marker, Popup, useMap, ZoomControl } from 'react-leaflet';
 import MarkerClusterGroup from '@changey/react-leaflet-markercluster';
+import useNotifications from './hooks/useNotifications';
 
 import './App.css';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 
+import AuthModal from './components/AuthModal';
 import L from 'leaflet';
 import imageCompression from 'browser-image-compression';
 import { GoogleLogin } from '@react-oauth/google';
@@ -81,17 +83,6 @@ const timeAgo = (date) => {
     return "ahora";
 };
 
-const showNotification = (title, body) => {
-    if (Notification.permission === 'granted') {
-        new Notification(title, {
-            body: body,
-            icon: '/logo192.png',
-            badge: '/logo192.png',
-            vibrate: [200, 100, 200]
-        });
-    }
-};
-
 // ✅ NUEVA: Función para corregir orientación de imagen (Samsung fix)
 const fixImageOrientation = async (file) => {
     return new Promise((resolve) => {
@@ -129,6 +120,8 @@ function App() {
   const [userMunicipality, setUserMunicipality] = useState('');
   const [center, setCenter] = useState([14.6407, -90.5132]);
   const [isLocating, setIsLocating] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
@@ -147,12 +140,17 @@ function App() {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [stats, setStats] = useState(null);
+  const { 
+  permission, 
+  requestPermission, 
+  notifyNewReport 
+} = useNotifications(userLocation);
 
-  useEffect(() => {
-    if ("Notification" in window && Notification.permission !== "denied") {
-        Notification.requestPermission();
+    useEffect(() => {
+    if ("Notification" in window && Notification.permission === 'default') {
+        requestPermission();
     }
-  }, []);
+    }, [requestPermission]);
 
   useEffect(() => {
     axios.get(`${API_URL}/auth/me`).then(res => {
@@ -216,24 +214,11 @@ function App() {
     const socket = io(API_URL);
 
     socket.on('new_report', (newReport) => {
-        setReports(prev => [newReport, ...prev]);
-        axios.get(`${API_URL}/stats`).then(res => setStats(res.data));
+    setReports(prev => [newReport, ...prev]);
+    axios.get(`${API_URL}/stats`).then(res => setStats(res.data));
 
-        if (userLocation && newReport.location && newReport.location.coordinates) {
-            const reportLatLng = L.latLng(
-                newReport.location.coordinates[1], 
-                newReport.location.coordinates[0]
-            );
-            const userLatLng = L.latLng(userLocation[0], userLocation[1]);
-            const distance = userLatLng.distanceTo(reportLatLng);
-
-            if (distance <= 5000) {
-                showNotification(
-                    `Nuevo reporte: ${newReport.category}`, 
-                    newReport.description
-                );
-            }
-        }
+    // Notificar si está cerca
+    notifyNewReport(newReport);
     });
 
     socket.on('delete_report', (deletedReportId) => {
@@ -358,11 +343,50 @@ function App() {
   };
   
   const handleRecenter = () => { 
-      if (userLocation) {
-          setCenter(userLocation);
-          toast.success('Centrado en tu ubicación');
-      }
-  };
+    if (isLocating) {
+        toast.info('Ya estamos obteniendo tu ubicación...');
+        return;
+    }
+    
+    setIsLocating(true);
+    
+    navigator.geolocation.getCurrentPosition(
+        async (position) => {
+            const { latitude, longitude } = position.coords;
+            const newLocation = [latitude, longitude];
+            
+            setUserLocation(newLocation);
+            setCenter(newLocation);
+            setIsLocating(false);
+            
+            toast.success('Ubicación actualizada');
+            
+            // Actualizar municipio
+            try {
+                const response = await axios.get(
+                    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&countrycodes=gt&accept-language=es`
+                );
+                const address = response.data.address;
+                setUserMunicipality(
+                    address.city || address.town || address.state_district || 
+                    address.county || address.state
+                );
+            } catch (e) { 
+                console.error("Error obteniendo municipio", e); 
+            }
+        },
+        (error) => { 
+            console.error("Error obteniendo ubicación:", error);
+            setIsLocating(false);
+            toast.error('No se pudo obtener tu ubicación');
+        },
+        {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        }
+    );
+    };
 
   const handleReportAbuse = async (reportId) => {
     try {
@@ -567,9 +591,9 @@ function App() {
           }
         });
       }, 1000);
-    }
-  }, 500);
-};
+    } 
+     }, 500);
+    };
 
   // NUEVO: Determinar si el usuario puede confirmar este reporte
   const canConfirm = (report) => {
@@ -591,18 +615,14 @@ function App() {
     ]);
     if (distance < 1000) return `${Math.round(distance)}m`;
     return `${(distance / 1000).toFixed(1)}km`;
-  };
+    };
 
-  const handleLogout = async () => {
+    const handleLogout = async () => {
     try {
         await axios.get(`${API_URL}/auth/logout`);
-        // Si el servidor devuelve 2xx, la lógica de abajo se ejecuta.
     } catch (error) {
-        // Si el servidor devuelve 401, cae aquí.
-        // Aquí no se muestra el toast de error porque sabemos que el 401 es esperado/funcional.
-        console.warn('Advertencia al cerrar sesión (Posiblemente 401 esperado):', error); 
+        console.warn('Advertencia al cerrar sesión:', error); 
     }
-
     // Estas líneas se ejecutan *después* del try o el catch.
     setUser(null);
     setIsAdmin(false);
@@ -615,18 +635,17 @@ function App() {
     axios.get(`${API_URL}/reports?${params.toString()}`)
         .then(res => setReports(res.data))
         .catch(err => console.error("Error cargando reportes:", err));
-};  
+    };
+      
 
     const handleAddReportClick = () => {
-    if (user) {
-        // Si hay usuario logueado, abre el modal
-        setShowAddModal(true);
-    } else {
-        // Si no hay usuario, muestra el mensaje para loguearse
-        toast.info('Para agregar un reporte, primero debes iniciar sesión. ');
-        // O podrías redirigir al usuario: navigate('/login');
-    }
-};
+        if (user) {
+            setShowAddModal(true);
+        } else {
+            toast.info('Para agregar un reporte, primero debes iniciar sesión.');
+            setShowAuthModal(true);
+        }
+    };
 
   // RETURN DEL COMPONENTE PRINCIPAL
   return (
@@ -714,39 +733,30 @@ function App() {
             ) : ( 
                 <div style={{ marginBottom: '20px' }}>
                     <button
-                        onClick={googleLoginSuccess}
+                        onClick={() => setShowAuthModal(true)}
                         style={{
                             width: '100%',
-                            padding: '12px',
-                            background: 'white',
-                            border: '1px solid #dadce0',
-                            borderRadius: '8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '12px',
+                            padding: '14px',
+                            background: 'linear-gradient(135deg, var(--primary-color), var(--primary-color-light))',
+                            border: 'none',
+                            borderRadius: '10px',
+                            color: 'white',
+                            fontSize: '16px',
+                            fontWeight: '600',
                             cursor: 'pointer',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            color: '#3c4043',
-                            transition: 'all 0.2s'
+                            transition: 'var(--transition)',
+                            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
                         }}
                         onMouseEnter={(e) => {
-                            e.target.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-                            e.target.style.backgroundColor = '#f8f9fa';
+                            e.target.style.transform = 'translateY(-2px)';
+                            e.target.style.boxShadow = '0 6px 20px rgba(37, 99, 235, 0.4)';
                         }}
                         onMouseLeave={(e) => {
-                            e.target.style.boxShadow = 'none';
-                            e.target.style.backgroundColor = 'white';
+                            e.target.style.transform = 'translateY(0)';
+                            e.target.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.3)';
                         }}
                     >
-                        <svg width="18" height="18" viewBox="0 0 18 18">
-                            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
-                            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/>
-                            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707 0-.593.102-1.17.282-1.707V4.961H.957C.347 6.175 0 7.55 0 9s.348 2.825.957 4.039l3.007-2.332z"/>
-                            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
-                        </svg>
-                        Continuar con Google
+                         Iniciar Sesión / Registrarse
                     </button>
                 </div>
             )}
@@ -1273,6 +1283,18 @@ function App() {
             )}
         </div>
     </div>
+    {/* Modal de Autenticación */}
+    {showAuthModal && (
+        <AuthModal 
+            onClose={() => setShowAuthModal(false)}
+            onSuccess={(user) => {
+                setUser(user);
+                if (user.role === 'admin') setIsAdmin(true);
+                toast.success(`¡Bienvenido ${user.displayName}!`);
+            }}
+            apiUrl={API_URL}
+        />
+    )}
     </>
   );
 }

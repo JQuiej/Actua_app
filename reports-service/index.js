@@ -7,6 +7,7 @@ require('dotenv').config();
 const axios = require('axios');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const LocalStrategy = require('passport-local').Strategy;
 const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const cron = require('node-cron');
@@ -35,6 +36,7 @@ const storage = new CloudinaryStorage({
 const upload = multer({ storage: storage });
 const Report = require('./models/Report');
 const User = require('./models/user');
+const LocalUser = require('./models/LocalUser'); // NUEVO
 
 const app = express();
 
@@ -42,14 +44,13 @@ const app = express();
 const allowedOrigins = [
     'http://localhost:3000',
     process.env.FRONTEND_URL
-].filter(Boolean); // Elimina valores undefined
+].filter(Boolean);
 
 console.log('Orígenes CORS permitidos:', allowedOrigins);
 
 const corsOptions = {
   origin: function (origin, callback) {
     console.log('Petición recibida del origen:', origin);
-    // Permitir requests sin origin (mobile apps, Postman, etc)
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.indexOf(origin) !== -1) {
@@ -63,7 +64,7 @@ const corsOptions = {
   methods: ["GET", "POST", "DELETE", "PATCH", "PUT", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   exposedHeaders: ["set-cookie"],
-  maxAge: 86400 // 24 horas
+  maxAge: 86400
 };
 
 app.use(cors(corsOptions));
@@ -73,28 +74,27 @@ const backendUrl = process.env.NODE_ENV === 'production'
     ? process.env.BACKEND_URL 
     : 'http://localhost:5000';
 
-// ✅ Trust proxy mejorado para producción
 if (process.env.NODE_ENV === 'production') {
     app.set('trust proxy', 1);
 }
 
-// ✅ CONFIGURACIÓN DE SESIÓN MEJORADA PARA SAFARI/iOS
+// ✅ CONFIGURACIÓN DE SESIÓN MEJORADA
 app.use(session({
     secret: process.env.SESSION_SECRET || 'secretkey',
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({ 
         mongoUrl: process.env.MONGO_URI,
-        touchAfter: 24 * 3600 // Actualizar sesión solo una vez cada 24 horas
+        touchAfter: 24 * 3600
     }),
-    name: 'actua.sid', // Nombre personalizado de cookie
+    name: 'actua.sid',
     cookie: {
         secure: process.env.NODE_ENV === 'production', 
         httpOnly: true,
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+        maxAge: 7 * 24 * 60 * 60 * 1000,
         domain: process.env.NODE_ENV === 'production' 
-            ? process.env.COOKIE_DOMAIN  // Ej: '.tudominio.com'
+            ? process.env.COOKIE_DOMAIN
             : undefined
     }
 }));
@@ -102,11 +102,47 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+// ✅ ESTRATEGIA LOCAL (Email/Password)
+passport.use('local', new LocalStrategy({
+    usernameField: 'email',
+    passwordField: 'password'
+  },
+  async (email, password, done) => {
+    try {
+        const user = await LocalUser.findOne({ email: email.toLowerCase() });
+        if (!user) {
+            return done(null, false, { message: 'Email o contraseña incorrectos' });
+        }
+        
+        const isMatch = await user.comparePassword(password);
+        if (!isMatch) {
+            return done(null, false, { message: 'Email o contraseña incorrectos' });
+        }
+        
+        // Unificar formato de usuario
+        return done(null, {
+            _id: user._id,
+            displayName: user.displayName,
+            email: user.email,
+            image: user.image || user.getDefaultImage(),
+            role: user.role,
+            type: 'local'
+        });
+    } catch (err) {
+        return done(err);
+    }
+  }
+));
+
+// ✅ ESTRATEGIA GOOGLE (mejorada para iOS)
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
     callbackURL: `${backendUrl}/auth/google/callback`,
-    proxy: true // ✅ IMPORTANTE para HTTPS en producción
+    proxy: true,
+    // ✅ NUEVO: Parámetros adicionales para iOS Safari
+    passReqToCallback: false,
+    scope: ['profile', 'email']
   },
   async (accessToken, refreshToken, profile, done) => {
     try {
@@ -119,17 +155,55 @@ passport.use(new GoogleStrategy({
                 image: profile.photos[0].value
             });
         }
-        done(null, user);
+        
+        // Unificar formato
+        done(null, {
+            _id: user._id,
+            displayName: user.displayName,
+            email: user.email,
+            image: user.image,
+            role: user.role,
+            type: 'google'
+        });
     } catch (err) {
         done(err, null);
     }
   }
 ));
 
-passport.serializeUser((user, done) => { done(null, user.id); });
-passport.deserializeUser(async (id, done) => {
+// ✅ SERIALIZACIÓN MEJORADA (soporta ambos tipos)
+passport.serializeUser((user, done) => { 
+    done(null, { id: user._id, type: user.type }); 
+});
+
+passport.deserializeUser(async (data, done) => {
     try {
-        const user = await User.findById(id);
+        let user;
+        if (data.type === 'local') {
+            user = await LocalUser.findById(data.id);
+            if (user) {
+                user = {
+                    _id: user._id,
+                    displayName: user.displayName,
+                    email: user.email,
+                    image: user.image || user.getDefaultImage(),
+                    role: user.role,
+                    type: 'local'
+                };
+            }
+        } else {
+            user = await User.findById(data.id);
+            if (user) {
+                user = {
+                    _id: user._id,
+                    displayName: user.displayName,
+                    email: user.email,
+                    image: user.image,
+                    role: user.role,
+                    type: 'google'
+                };
+            }
+        }
         done(null, user);
     } catch (err) {
         done(err, null);
@@ -173,59 +247,231 @@ const ensureAdmin = (req, res, next) => {
     res.status(403).json({ message: 'Acceso denegado' }); 
 };
 
-// --- RUTAS DE AUTENTICACIÓN ---
+// --- RUTAS DE AUTENTICACIÓN LOCAL ---
+app.post('/auth/local/register', async (req, res) => {
+    try {
+        const { email, password, displayName } = req.body;
+        
+        if (!email || !password || !displayName) {
+            return res.status(400).json({ 
+                message: 'Todos los campos son requeridos' 
+            });
+        }
+        
+        if (password.length < 6) {
+            return res.status(400).json({ 
+                message: 'La contraseña debe tener al menos 6 caracteres' 
+            });
+        }
+        
+        const existingLocal = await LocalUser.findOne({ email: email.toLowerCase() });
+        const existingGoogle = await User.findOne({ email: email.toLowerCase() });
+        
+        if (existingLocal || existingGoogle) {
+            return res.status(400).json({ 
+                message: 'Este email ya está registrado' 
+            });
+        }
+        
+        const newUser = new LocalUser({
+            email: email.toLowerCase(),
+            password,
+            displayName,
+            isVerified: true
+        });
+        
+        await newUser.save();
+        
+        const userObj = {
+            _id: newUser._id,
+            displayName: newUser.displayName,
+            email: newUser.email,
+            image: newUser.image || newUser.getDefaultImage(),
+            role: newUser.role,
+            type: 'local'
+        };
+        
+        req.login(userObj, (err) => {
+            if (err) {
+                return res.status(500).json({ message: 'Error al iniciar sesión' });
+            }
+            res.status(201).json({ 
+                message: 'Usuario registrado exitosamente',
+                user: userObj
+            });
+        });
+        
+    } catch (err) {
+        console.error('Error en registro:', err);
+        res.status(500).json({ message: 'Error al registrar usuario' });
+    }
+});
+
+app.post('/auth/local/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        
+        if (!email || !password) {
+            return res.status(400).json({ 
+                message: 'Email y contraseña son requeridos' 
+            });
+        }
+        
+        const user = await LocalUser.findOne({ email: email.toLowerCase() });
+        
+        if (!user) {
+            return res.status(401).json({ 
+                message: 'Email o contraseña incorrectos' 
+            });
+        }
+        
+        const isMatch = await user.comparePassword(password);
+        
+        if (!isMatch) {
+            return res.status(401).json({ 
+                message: 'Email o contraseña incorrectos' 
+            });
+        }
+        
+        const userObj = {
+            _id: user._id,
+            displayName: user.displayName,
+            email: user.email,
+            image: user.image || user.getDefaultImage(),
+            role: user.role,
+            type: 'local'
+        };
+        
+        req.login(userObj, (err) => {
+            if (err) {
+                return res.status(500).json({ message: 'Error al iniciar sesión' });
+            }
+            res.json({ 
+                message: 'Inicio de sesión exitoso',
+                user: userObj
+            });
+        });
+        
+    } catch (err) {
+        console.error('Error en login:', err);
+        res.status(500).json({ message: 'Error al iniciar sesión' });
+    }
+});
+
 app.get('/auth/google', passport.authenticate('google', { 
     scope: ['profile', 'email'],
-    prompt: 'select_account' // ✅ Forzar selección de cuenta
+    prompt: 'select_account'
 }));
 
-// ✅ CALLBACK MEJORADO PARA POPUP (Safari/iOS compatible)
+// ✅ CALLBACK MEJORADO PARA iOS
 app.get('/auth/google/callback', 
     passport.authenticate('google', { failureRedirect: '/auth/failure' }), 
     (req, res) => {
-        // En lugar de redirect, enviar HTML que cierra el popup
         res.send(`
             <!DOCTYPE html>
             <html>
             <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Login Exitoso</title>
+                <style>
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        height: 100vh;
+                        margin: 0;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                    }
+                    .container {
+                        text-align: center;
+                        padding: 2rem;
+                    }
+                    .spinner {
+                        border: 4px solid rgba(255,255,255,0.3);
+                        border-top: 4px solid white;
+                        border-radius: 50%;
+                        width: 40px;
+                        height: 40px;
+                        animation: spin 1s linear infinite;
+                        margin: 0 auto 1rem;
+                    }
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                </style>
             </head>
             <body>
+                <div class="container">
+                    <div class="spinner"></div>
+                    <h2>✅ Autenticación exitosa</h2>
+                    <p>Redirigiendo...</p>
+                </div>
                 <script>
-                    // Notificar a la ventana padre y cerrar popup
-                    if (window.opener) {
-                        window.opener.postMessage('login_success', '*');
-                        window.close();
-                    } else {
-                        // Si no es popup, redirigir normalmente
-                        window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}';
-                    }
+                    (function() {
+                        // Intentar múltiples métodos para cerrar/redirigir
+                        const frontendUrl = '${process.env.FRONTEND_URL || 'http://localhost:3000'}';
+                        
+                        // Método 1: PostMessage al opener (popup)
+                        if (window.opener && !window.opener.closed) {
+                            try {
+                                window.opener.postMessage('login_success', '*');
+                                setTimeout(() => window.close(), 500);
+                            } catch (e) {
+                                console.error('Error con opener:', e);
+                                window.location.href = frontendUrl;
+                            }
+                        } 
+                        // Método 2: Redirección directa (ventana completa)
+                        else {
+                            window.location.href = frontendUrl;
+                        }
+                    })();
                 </script>
-                <p>Autenticación exitosa. Esta ventana se cerrará automáticamente...</p>
             </body>
             </html>
         `);
     }
 );
 
-// ✅ NUEVA: Ruta de fallo de autenticación
 app.get('/auth/failure', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Error de Autenticación</title>
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    margin: 0;
+                    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                    color: white;
+                }
+                .container { text-align: center; padding: 2rem; }
+            </style>
         </head>
         <body>
+            <div class="container">
+                <h2>❌ Error en la autenticación</h2>
+                <p>Redirigiendo...</p>
+            </div>
             <script>
                 if (window.opener) {
                     window.opener.postMessage('login_failure', '*');
-                    window.close();
+                    setTimeout(() => window.close(), 1000);
                 } else {
                     window.location.href = '${process.env.FRONTEND_URL || 'http://localhost:3000'}';
                 }
             </script>
-            <p>Error en la autenticación. Redirigiendo...</p>
         </body>
         </html>
     `);
@@ -236,7 +482,7 @@ app.get('/auth/logout', (req, res, next) => {
         if (err) { return next(err); }
         req.session.destroy((err) => {
             res.clearCookie('actua.sid');
-            res.redirect(process.env.FRONTEND_URL || 'http://localhost:3000');
+            res.json({ message: 'Sesión cerrada' });
         });
     }); 
 });
@@ -245,8 +491,7 @@ app.get('/auth/me', (req, res) => {
     res.json(req.user || null); 
 });
 
-// --- RUTAS DE REPORTES ---
-
+// --- RUTAS DE REPORTES (sin cambios) ---
 app.get('/reports', async (req, res) => {
     try {
         const { status, category, municipality } = req.query;
@@ -320,7 +565,7 @@ app.post('/reports', ensureAuth, upload.single('image'), async (req, res) => {
             municipality,
             location: { type: 'Point', coordinates: [lng, lat] },
             imageUrl: req.file ? req.file.path : null,
-            createdBy: req.user.id
+            createdBy: req.user._id
         });
         
         const savedReport = await newReport.save();
@@ -337,11 +582,11 @@ app.post('/reports/:id/report', ensureAuth, async (req, res) => {
         const report = await Report.findById(req.params.id);
         if (!report) return res.status(404).json({ message: 'Reporte no encontrado' });
         
-        if (report.reportedBy.includes(req.user.id)) {
+        if (report.reportedBy.includes(req.user._id)) {
             return res.status(400).json({ message: 'Ya has reportado este evento.' });
         }
         
-        report.reportedBy.push(req.user.id);
+        report.reportedBy.push(req.user._id);
         await report.save();
         
         io.emit('report_updated', report);
@@ -357,11 +602,11 @@ app.post('/reports/:id/confirm', ensureAuth, async (req, res) => {
         const report = await Report.findById(req.params.id);
         if (!report) return res.status(404).json({ message: 'Reporte no encontrado' });
         
-        const userId = req.user.id;
+        const userId = req.user._id;
         const alreadyConfirmed = report.confirmedBy.includes(userId);
         
         if (alreadyConfirmed) {
-            report.confirmedBy = report.confirmedBy.filter(id => id.toString() !== userId);
+            report.confirmedBy = report.confirmedBy.filter(id => id.toString() !== userId.toString());
         } else {
             report.confirmedBy.push(userId);
         }
@@ -384,7 +629,7 @@ app.patch('/reports/:id/resolve', ensureAuth, async (req, res) => {
         const report = await Report.findById(req.params.id);
         if (!report) return res.status(404).json({ message: 'Reporte no encontrado' });
         
-        if (report.createdBy.toString() !== req.user.id && req.user.role !== 'admin') {
+        if (report.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
             return res.status(403).json({ message: 'No autorizado' });
         }
         
@@ -441,7 +686,6 @@ app.get('/stats', async (req, res) => {
     }
 });
 
-// --- TAREA PROGRAMADA ---
 cron.schedule('0 * * * *', async () => {
     console.log('Ejecutando limpieza automática de reportes...');
     try {
@@ -451,7 +695,6 @@ cron.schedule('0 * * * *', async () => {
     }
 });
 
-// ✅ HEALTH CHECK
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date() });
 });
