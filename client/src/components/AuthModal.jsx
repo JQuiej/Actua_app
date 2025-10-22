@@ -80,41 +80,76 @@ const AuthModal = ({ onClose, onSuccess, apiUrl }) => {
     }
   };
 
-  const handleGoogleLogin = () => {
-  const width = 500;
-  const height = 600;
-  const left = window.screen.width / 2 - width / 2;
-  const top = window.screen.height / 2 - height / 2;
-  
-  window.open(
-    `${apiUrl}/auth/google`,
-    'Google Login',
-    `width=${width},height=${height},left=${left},top=${top}`
-  );
-  
-  // Polling: revisar cookie cada segundo
-  const checkAuth = setInterval(() => {
-    const authSuccess = document.cookie.includes('auth_success=true');
-    
-    if (authSuccess) {
-      clearInterval(checkAuth);
-      // Limpiar cookie
-      document.cookie = 'auth_success=; max-age=0';
-      
-      // Obtener usuario
-      fetch(`${apiUrl}/auth/me`, { credentials: 'include' })
-        .then(res => res.json())
-        .then(user => {
-          if (user) {
-            onSuccess(user);
-            onClose();
-          }
-        });
+const handleGoogleLogin = () => {
+    const width = 500;
+    const height = 600;
+    // Centrar la ventana
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+
+    // 1. Limpiar marca anterior
+    localStorage.removeItem('auth_success');
+
+    // 2. Abrir la ventana y guardar la referencia
+    const popupWindow = window.open(
+        `${apiUrl}/auth/google`,
+        'Google Login',
+        `width=${width},height=${height},left=${left},top=${top}`
+    );
+
+    if (!popupWindow) {
+        alert('No se pudo abrir la ventana de inicio de sesión. Por favor, deshabilite el bloqueador de popups.');
+        return;
     }
-  }, 1000);
-  
-  // Timeout después de 2 minutos
-  setTimeout(() => clearInterval(checkAuth), 120000);
+
+    let checkAuth;
+
+    // 3. Polling cada 500ms (verificación más rápida)
+    checkAuth = setInterval(() => {
+        const authSuccess = localStorage.getItem('auth_success');
+        
+        // Verificar éxito O cierre manual de la ventana
+        if (authSuccess || popupWindow.closed) {
+            clearInterval(checkAuth);
+            localStorage.removeItem('auth_success');
+
+            if (authSuccess) {
+                // Éxito: La cookie se estableció, obtener usuario
+                fetch(`${apiUrl}/auth/me`, { credentials: 'include' })
+                    .then(res => res.json())
+                    .then(user => {
+                        if (user && user.id) {
+                            // 🌟 Solución: Recargar la página para forzar la actualización de la UI
+                            // onSuccess(user) se llama antes de recargar por si hay lógica adicional
+                            onSuccess(user); 
+                            window.location.reload(); 
+                        } else {
+                            console.error('Autenticación marcada, pero no se pudo obtener el perfil del usuario.');
+                            onClose(); 
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error al obtener el perfil de usuario:', error);
+                        onClose();
+                    });
+            } else {
+                // La ventana se cerró manualmente sin éxito
+                console.log('Ventana de login cerrada por el usuario.');
+                onClose();
+            }
+        }
+    }, 500); 
+
+    // 4. Timeout de respaldo (2 minutos)
+    setTimeout(() => {
+        clearInterval(checkAuth);
+        if (!popupWindow.closed) {
+             // Opcional: Cerrar el popup después del timeout
+             // popupWindow.close(); 
+        }
+        console.log('Timeout de autenticación alcanzado.');
+        onClose();
+    }, 120000); 
 };
 
   return (

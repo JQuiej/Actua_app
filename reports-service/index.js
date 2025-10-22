@@ -363,31 +363,47 @@ app.get('/auth/google', passport.authenticate('google', {
     prompt: 'select_account'
 }));
 
-app.get('/auth/google/callback', 
-    passport.authenticate('google', { failureRedirect: '/auth/failure' }), 
+app.get('/auth/google/callback',
+    passport.authenticate('google', { failureRedirect: '/auth/failure' }),
     (req, res) => {
-        res.cookie('auth_success', 'true', { 
-            maxAge: 5000, 
-            httpOnly: false,
-            secure: true,
-            sameSite: 'none'
-        });
-        
+        // Establecer la cookie de éxito (mantienes esto)
+        // Ejemplo de configuración de express-session (ajusta según tu caso)
+        app.use(session({
+        // ... otras opciones ...
+        cookie: {
+            maxAge: 24 * 60 * 60 * 1000, // 24 hours
+            sameSite: 'none',
+            secure: true, // Debe ser true en producción (HTTPS)
+            httpOnly: true
+        }
+        }));
+
         // HTML que cierra el popup
         res.send(`
             <!DOCTYPE html>
             <html>
-            <head><title>Login Exitoso</title></head>
-            <body>
+            <head>
+                <title>Login Exitoso</title>
                 <script>
+                    // Guardar en localStorage para que la ventana principal lo detecte
+                    localStorage.setItem('auth_success', Date.now().toString());
+
+                    // Intenta cerrar la ventana inmediatamente
                     window.close();
+                </script>
+            </head>
+            <body>
+                <p>Autenticación exitosa. Cerrando ventana...</p>
+                <script>
                     setTimeout(() => {
+                        // Este código solo se ejecutará si window.close() falló por restricciones del navegador
                         if (!window.closed) {
-                            window.location.href = '${process.env.FRONTEND_URL}';
+                            // Puedes omitir esta redirección si no es necesaria como respaldo
+                            // window.location.href = '${process.env.FRONTEND_URL}';
+                            document.body.innerHTML = '<p>Error al cerrar la ventana. Por favor, ciérrala manualmente.</p>';
                         }
                     }, 500);
                 </script>
-                <p>Autenticación exitosa. Cerrando ventana...</p>
             </body>
             </html>
         `);
